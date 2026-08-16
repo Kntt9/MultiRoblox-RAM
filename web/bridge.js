@@ -530,7 +530,7 @@
     writeFpsCap: (cap) => { settings.fpsCap = parseInt(cap, 10) || 60; save(LS.settings, settings); return Promise.resolve({ ok: true }); },
 
     // ── version info ──────────────────────────────────────────────────────
-    getAppVersion: () => Promise.resolve('0.5.0-web'),
+    getAppVersion: () => Promise.resolve('0.6.0-web'),
     getRobloxVersion: async (channel) => {
       try {
         const r = await fetch('/api/roblox-version', { signal: AbortSignal.timeout(5000) });

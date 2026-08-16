@@ -5,7 +5,7 @@
 // dentro de deploy/, deixando a pasta autossuficiente.
 //
 //   node site/build-deploy.mjs
-import { existsSync, mkdirSync, readFileSync, copyFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, copyFileSync, statSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +46,19 @@ for (const a of ARTIFACTS) {
     console.warn(`    Portátil:    build.bat ou cargo build --release em src-tauri/`);
     console.warn('    Depois copie os artefatos para dist/ (ou commite-os — já estão fora do .gitignore).');
   }
+}
+
+// 3) screenshots do app (capturados por scripts/capture-shots.mjs)
+const SHOTS_SRC = join(ROOT, 'site', 'screenshots');
+const SHOTS_OUT = join(OUT, 'screenshots');
+if (existsSync(SHOTS_SRC)) {
+  mkdirSync(SHOTS_OUT, { recursive: true });
+  for (const f of readdirSync(SHOTS_SRC)) {
+    copyFileSync(join(SHOTS_SRC, f), join(SHOTS_OUT, f));
+  }
+  console.log(`${readdirSync(SHOTS_SRC).length} screenshots copiados para deploy/screenshots/`);
+} else {
+  console.warn('⚠️  site/screenshots/ não existe — rode scripts/capture-shots.mjs');
 }
 
 console.log('\nPasta deploy/ pronta. Publique-a em:');

@@ -12,9 +12,9 @@ Página de demonstração (landing page) do programa, em `site/index.html` — a
 ## Gerando os artefatos de download (dist/)
 
 ```bash
-# Instalador Windows (NSIS) — gera src-tauri/target/release/bundle/nsis/MultiRoblox_0.5.0_x64-setup.exe
+# Instalador Windows (NSIS) — gera src-tauri/target/release/bundle/nsis/MultiRoblox_<versao>_x64-setup.exe
 npx tauri build --bundles nsis
-cp src-tauri/target/release/bundle/nsis/MultiRoblox_0.5.0_x64-setup.exe dist/
+cp src-tauri/target/release/bundle/nsis/MultiRoblox_*_x64-setup.exe dist/
 
 # Executável portátil — gera dist/MultiRoblox.exe
 build.bat   # ou: cargo build --release --manifest-path src-tauri/Cargo.toml --bin MultiRoblox && cp src-tauri/target/release/MultiRoblox.exe dist/
