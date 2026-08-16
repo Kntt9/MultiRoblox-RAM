@@ -1,0 +1,51 @@
+# Release automático (auto-update): ao dar push numa tag v* (ex.: v0.6.0),
+# compila o instalador NSIS assinado, gera o latest-version.json e cria um
+# GitHub Release com os 3 arquivos. Os apps instalados detectam e se atualizam.
+#
+# Pré-requisito: configurar 2 secrets no repositório (Settings → Secrets):
+#   TAURI_SIGNING_KEY_B64      → conteúdo do private.key em base64:
+#                                base64 -w0 src-tauri/.updater-secret/private.key
+#   TAURI_SIGNING_KEY_PASSWORD → senha da chave (arquivo password.txt)
+name: Release (auto-update)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build NSIS + updater artifacts (assinado)
+        shell: bash
+        env:
+          TAURI_SIGNING_KEY_B64: ${{ secrets.TAURI_SIGNING_KEY_B64 }}
+          TAURI_SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PASSWORD }}
+        run: |
+          echo "$TAURI_SIGNING_KEY_B64" | base64 -d > .updater-private.key
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat .updater-private.key)"
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_KEY_PASSWORD"
+          npx tauri build --bundles nsis
+
+      - name: Assemble release/ (manifest + artifacts)
+        shell: bash
+        run: node scripts/make-release.mjs --repo ${{ github.repository }}
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release/* --title "KNT Manager ${{ github.ref_name }}" --generate-notes
