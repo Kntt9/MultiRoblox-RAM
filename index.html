@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta http-equiv="refresh" content="0; url=./site/index.html"/>
+<title>KNT Manager — Redirecionando…</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0c0f;color:#f2f3f6;font-family:'Inter',system-ui,-apple-system,sans-serif}
+  .card{text-align:center;padding:40px}
+  .mark{width:56px;height:56px;border-radius:15px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900;color:#fff;background:linear-gradient(135deg,#7d6dff,#5c5ce0 55%,#4f46e5);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 16px 40px -12px rgba(92,92,224,.55)}
+  .spin{width:22px;height:22px;margin:22px auto 12px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:#7d6dff;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  p{font-size:13.5px;color:#a7aab3;margin:0}
+  a{color:#7d6dff;font-weight:600}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark">K</div>
+    <div class="spin"></div>
+    <p>Redirecionando para o site do <b>KNT Manager</b>…</p>
+    <p style="margin-top:8px">Se nada acontecer, <a href="./site/index.html">clique aqui</a>.</p>
+  </div>
+  <script>location.replace('./site/index.html');</script>
+</body>
+</html>
