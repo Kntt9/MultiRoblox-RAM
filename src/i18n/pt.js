@@ -36,7 +36,7 @@ window.I18N.pt = {
   'dash.groups': 'Grupos',
   'dash.trash': 'Na lixeira',
   'dash.alerts': 'Alertas',
-  'dash.noAlerts': 'Tudo certo — sem alertas.',
+  'dash.noAlerts': 'Tudo certo — sem alertas. Você está na v0.6.0!',
   'dash.expiredCookies': '{n} cookie{s} expirado{s}',
   'dash.accountsInTrash': '{n} conta{s} na lixeira',
   'dash.cats': 'Contas por categoria',

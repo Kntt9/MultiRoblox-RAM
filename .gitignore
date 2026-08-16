@@ -32,6 +32,10 @@ deploy
 !dist/MultiRoblox.exe
 !dist/*-setup.exe
 
+# Cópia local do app 0.5.0 usada só para testar o auto-update — não commitar
+# (gerada manualmente; apague quando não precisar mais)
+dist/MultiRoblox_0.5.0_portable.exe
+
 # Chaves de assinatura do auto-update — NUNCA commitar
 src-tauri/.updater-secret/
 
