@@ -38,7 +38,7 @@ window.I18N.en = {
   'dash.groups': 'Groups',
   'dash.trash': 'In trash',
   'dash.alerts': 'Alerts',
-  'dash.noAlerts': 'All clear — no alerts. You are on v0.6.0!',
+  'dash.noAlerts': 'All clear — no alerts. You are on v0.6.1!',
   'dash.expiredCookies': '{n} expired cookie{s}',
   'dash.accountsInTrash': '{n} account{s} in trash',
   'dash.cats': 'Accounts by category',

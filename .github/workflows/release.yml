@@ -41,7 +41,7 @@ jobs:
 
       - name: Assemble release/ (manifest + artifacts)
         shell: bash
-        run: node scripts/make-release.mjs --repo ${{ github.repository }}
+        run: node scripts/make-release.mjs --repo ${{ github.repository }} --notes "Release ${{ github.ref_name }} — salvar e copiar senha das contas."
 
       - name: Create GitHub Release
         shell: bash

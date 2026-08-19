@@ -16,7 +16,7 @@ const OUT = join(ROOT, 'deploy');
 // artefatos de download: instalador NSIS (gerado por `npx tauri build --bundles nsis`)
 // e executável portátil (gerado por build.bat / cargo build). Ambos em dist/.
 const ARTIFACTS = [
-  { src: 'dist/MultiRoblox_0.6.0_x64-setup.exe', name: 'MultiRoblox_0.6.0_x64-setup.exe', label: 'instalador NSIS' },
+  { src: 'dist/MultiRoblox_0.6.1_x64-setup.exe', name: 'MultiRoblox_0.6.1_x64-setup.exe', label: 'instalador NSIS' },
   { src: 'dist/MultiRoblox.exe', name: 'MultiRoblox.exe', label: 'executável portátil' },
 ];
 
