@@ -908,6 +908,7 @@ function showCardMenu(id, x, y) {
     <button class="ctx-item" onclick="ctxCopyId('${id}')"><span class="material-icons-round">tag</span>Copy user ID</button>
     <button class="ctx-item" onclick="ctxCopyUser('${id}')"><span class="material-icons-round">person</span>Copy username</button>
     <button class="ctx-item" onclick="ctxCopyCookie('${id}')"><span class="material-icons-round">cookie</span>Copy cookie</button>
+    ${a?.password ? `<button class="ctx-item" onclick="ctxCopyPassword('${id}')"><span class="material-icons-round">lock</span>Copy password</button>` : ''}
     <button class="ctx-item" onclick="ctxOpenBrowser('${id}')"><span class="material-icons-round">open_in_browser</span>Open in browser</button>
   `;
   document.body.appendChild(menu);
@@ -1001,6 +1002,7 @@ function ctxEdit(id) { closeCardMenu(); editAccount(id); }
 function ctxCopyId(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.userId) navigator.clipboard.writeText(a.userId).then(() => toast(t('acct.copyId'), 'ok')); else toast(t('acct.noId'), 'err'); }
 function ctxCopyUser(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.username) navigator.clipboard.writeText(a.username).then(() => toast(t('acct.copyUser'), 'ok')); else toast(t('acct.noUser'), 'err'); }
 function ctxCopyCookie(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.cookie) navigator.clipboard.writeText(a.cookie).then(() => toast(t('acct.copyCookie'), 'ok')); else toast(t('acct.noCookie'), 'err'); }
+function ctxCopyPassword(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.password) navigator.clipboard.writeText(a.password).then(() => toast(t('acct.copyPassword'), 'ok')); else toast(t('acct.noPassword'), 'err'); }
 async function ctxOpenBrowser(id) {
   closeCardMenu();
   const a = accounts.find(x => x.id === id);
@@ -1663,6 +1665,7 @@ function openEdit(id) {
   const refreshBtn = document.getElementById('edit-refresh-btn');
   if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.innerHTML = '<span class="material-icons-round" style="font-size:15px">refresh</span>Refresh from Roblox'; }
   document.getElementById('in-target').value = editAcc.gameTarget || '';
+  document.getElementById('in-password').value = editAcc.password || '';
   // Reset follow field/status -- it's a lookup tool, not a saved value.
   document.getElementById('in-follow').value = '';
   followSetStatus(t('edit.followHint'), '');
@@ -1703,13 +1706,23 @@ async function followUserLookup() {
   }
 }
 
+function togglePassVis() {
+  const inp = document.getElementById('in-password');
+  const icon = document.getElementById('pass-vis-icon');
+  if (!inp || !icon) return;
+  const isPass = inp.type === 'password';
+  inp.type = isPass ? 'text' : 'password';
+  icon.textContent = isPass ? 'visibility' : 'visibility_off';
+}
+
 async function saveEdit() {
   if (!editAcc) return;
   const target = document.getElementById('in-target').value.trim();
   const nickname = document.getElementById('in-nickname').value.trim();
   const description = document.getElementById('in-description').value.trim();
+  const password = document.getElementById('in-password').value;
   const categoryId = _editCatId || null;
-  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, categoryId });
+  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, categoryId, password });
   if (updated) {
     const idx = accounts.findIndex(a => a.id === editAcc.id);
     if (idx !== -1) {
@@ -3519,7 +3532,8 @@ async function manAddAccount() {
   const btn = document.querySelector('#man-status .btn-primary');
   if (btn) btn.disabled = true;
   try {
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', nickname: '' });
+    const password = _manualCreds?.password || '';
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', nickname: '', password });
     if (a) {
       accounts.push(a); render();
       toast(t('gen.added', { user: res.username }), 'ok');
@@ -3643,7 +3657,8 @@ async function genHistAdd(i) {
   try {
     const res = await api.validateCookie(h.cookie);
     if (!res || !res.username) { toast(t('gen.cookieInvalid'), 'err'); return; }
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '' });
+    const password = h.password || '';
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '', password });
     if (a) { accounts.push(a); render(); toast(t('gen.added', { user: res.username }), 'ok'); }
   } catch(e) { toast(t('acct.addFailed', { msg: e.message }), 'err'); }
 }
@@ -3655,7 +3670,8 @@ async function genAddToAccounts() {
   try {
     const res = await api.validateCookie(_lastGenData.cookie);
     if (!res || !res.username) { toast(t('gen.cookieInvalid'), 'err'); if(btn)btn.disabled=false; return; }
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: _lastGenData.cookie, gameTarget: '', nickname: '' });
+    const password = _lastGenData.password || '';
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: _lastGenData.cookie, gameTarget: '', nickname: '', password });
     if (a) { accounts.push(a); render(); toast(t('gen.added', { user: res.username }), 'ok'); }
     if(btn)btn.disabled=false;
   } catch(e) { toast(t('common.failed', { msg: e.message }), 'err'); if(btn)btn.disabled=false; }

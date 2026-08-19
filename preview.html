@@ -1387,6 +1387,16 @@ body.theme-graphite{--bg:#0d0e10;--s1:#131418;--s2:#1a1c21;--s3:#23262d;--s4:#2e
             <div class="sr"><div class="sr-left"><div class="sr-label" data-i18n="settings.accountsSaved">Accounts saved</div></div><span class="badge" id="stat-count">0</span></div>
             <div class="sr"><div class="sr-left"><div class="sr-label" data-i18n="settings.robloxVersion">Roblox version</div></div><span class="badge" id="stat-rblx-ver">-</span></div>
           </div>
+          <!-- Updates -->
+          <div class="sc">
+            <div class="sc-head" data-i18n="update.title">Updates</div>
+            <div class="sr">
+              <div class="sr-left"><div class="sr-label" data-i18n="update.auto">Automatic updates</div><div class="sr-desc" data-i18n="update.autoDesc">The app checks for a new version on startup and lets you install it with one click.</div></div>
+              <button class="btn btn-ghost" id="btn-check-updates" onclick="checkForUpdates(true)">
+                <span class="material-icons-round" style="font-size:15px">system_update_alt</span><span data-i18n="update.check">Check for updates</span>
+              </button>
+            </div>
+          </div>
           <!-- Multi-instance -->
           <div class="sc">
             <div class="sc-head" data-i18n="settings.multiInstance">Multi-Instance</div>
@@ -1939,6 +1949,14 @@ body.theme-graphite{--bg:#0d0e10;--s1:#131418;--s2:#1a1c21;--s3:#23262d;--s4:#2e
       <input type="text" id="in-target" data-i18n-ph="edit.targetPh" placeholder="e.g. 6872265039 or https://www.roblox.com/share?..."/>
     </div>
     <div class="field">
+      <label for="in-password" data-i18n="edit.password">Password</label>
+      <div style="display:flex;gap:8px;align-items:stretch">
+        <input type="password" id="in-password" data-i18n-ph="edit.passwordPh" placeholder="Account password" style="flex:1;min-width:0" autocomplete="off" spellcheck="false"/>
+        <button class="btn btn-ghost" style="flex-shrink:0;height:34px;padding:0 8px" onclick="togglePassVis()" title="Show/hide"><span class="material-icons-round" style="font-size:16px" id="pass-vis-icon">visibility_off</span></button>
+      </div>
+      <div class="field-hint" data-i18n="edit.passwordHint">Optional. Stored encrypted on your PC only.</div>
+    </div>
+    <div class="field">
       <button class="btn btn-ghost" id="edit-refresh-btn" style="width:100%;justify-content:center" onclick="refreshEditFromRoblox()">
         <span class="material-icons-round" style="font-size:15px">refresh</span><span data-i18n="edit.refresh">Refresh from Roblox</span>
       </button>
@@ -2032,6 +2050,19 @@ body.theme-graphite{--bg:#0d0e10;--s1:#131418;--s2:#1a1c21;--s3:#23262d;--s4:#2e
     </div>
   </div>
 </div>
+<!-- update modal -->
+<div class="overlay" id="m-update" data-backdrop-close="true" onclick="if(event.target===this)closeModal('m-update')">
+  <div class="modal" onclick="event.stopPropagation()" style="width:360px">
+    <div class="modal-title" style="display:flex;align-items:center;gap:9px"><span class="material-icons-round" style="font-size:19px;color:var(--ac)">system_update_alt</span><span data-i18n="update.availableTitle">Update available</span></div>
+    <div class="modal-sub" id="update-desc">—</div>
+    <div id="update-notes" style="font-size:12.5px;color:var(--t2);background:var(--s2);border:1px solid var(--bd);border-radius:9px;padding:10px 12px;max-height:140px;overflow-y:auto;white-space:pre-wrap;line-height:1.5;margin-bottom:12px;display:none"></div>
+    <div class="mst hidden" id="update-status"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-update')" data-i18n="update.later">Later</button>
+      <button class="btn btn-primary" id="btn-update-install" onclick="installUpdate()"><span class="material-icons-round" style="font-size:15px">download</span><span data-i18n="update.install">Download &amp; Install</span></button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <div class="av-tip" id="av-tip">
   <div class="av-tip-top">
@@ -2087,7 +2118,7 @@ window.I18N.en = {
   'dash.groups': 'Groups',
   'dash.trash': 'In trash',
   'dash.alerts': 'Alerts',
-  'dash.noAlerts': 'All clear — no alerts.',
+  'dash.noAlerts': 'All clear — no alerts. You are on v0.6.0!',
   'dash.expiredCookies': '{n} expired cookie{s}',
   'dash.accountsInTrash': '{n} account{s} in trash',
   'dash.cats': 'Accounts by category',
@@ -2191,6 +2222,9 @@ window.I18N.en = {
   'edit.follow': 'Follow user',
   'edit.followPh': 'username',
   'edit.followHint': "Finds the server they're in and fills the target above.",
+  'edit.password': 'Password',
+  'edit.passwordPh': 'Account password',
+  'edit.passwordHint': 'Optional. Stored encrypted on your PC only.',
   'edit.followFinding': 'Finding',
   'edit.followEnter': 'Enter a username',
   'edit.followNoCookie': 'This account has no saved cookie',
@@ -2538,7 +2572,7 @@ window.I18N.en = {
   'help.launchTitle': 'Launch',
   'help.launchDesc': 'Click Start on any card. Set a game ID, private server link, or <code class="inline-code">placeId:jobId</code> via the edit button to launch directly into a game or specific server.',
   'help.rmbTitle': 'Right-click a card',
-  'help.rmbDesc': 'Kill the instance, copy the user ID/username/cookie, or open the account logged in in a real browser.',
+  'help.rmbDesc': 'Kill the instance, copy the user ID/username/cookie/password, or open the account logged in in a real browser.',
   'help.mixerTitle': 'Mixer',
   'help.mixerDesc': 'Set graphics quality, FPS cap, and volume for every instance. Applies on next launch.',
   'help.genTitle': 'Generator',
@@ -2566,6 +2600,8 @@ window.I18N.en = {
   'acct.noUser': 'No username',
   'acct.copyCookie': 'Cookie copied',
   'acct.noCookie': 'No cookie saved for this account',
+  'acct.copyPassword': 'Password copied',
+  'acct.noPassword': 'No password saved for this account',
   'login.opening': 'Opening browser…',
   'acct.refreshed': 'Account data refreshed from Roblox',
   'acct.allCleared': 'All accounts cleared',
@@ -2613,6 +2649,21 @@ window.I18N.en = {
   'mixer.untrackedN': ' ({n} couldn’t be identified)',
   'mixer.trimmedN': 'Trimmed {t}/{tot} instance(s)',
   'mixer.noRunning': 'No running instances',
+
+  // ── auto-update ──
+  'update.title': 'Updates',
+  'update.auto': 'Automatic updates',
+  'update.autoDesc': 'Checks for a new version when the app starts and lets you install it with one click.',
+  'update.check': 'Check for updates',
+  'update.checking': 'Checking…',
+  'update.uptodate': 'You are on the latest version',
+  'update.checkFailed': 'Couldn’t check for updates: {err}',
+  'update.availableTitle': 'Update available',
+  'update.downloadPrompt': 'Version {v} is ready. Download and install now? The app will restart.',
+  'update.later': 'Later',
+  'update.install': 'Download & Install',
+  'update.downloading': 'Downloading…',
+  'update.failed': 'Update failed: {msg}',
 };
 
 </script>
@@ -2655,7 +2706,7 @@ window.I18N.pt = {
   'dash.groups': 'Grupos',
   'dash.trash': 'Na lixeira',
   'dash.alerts': 'Alertas',
-  'dash.noAlerts': 'Tudo certo — sem alertas.',
+  'dash.noAlerts': 'Tudo certo — sem alertas. Você está na v0.6.0!',
   'dash.expiredCookies': '{n} cookie{s} expirado{s}',
   'dash.accountsInTrash': '{n} conta{s} na lixeira',
   'dash.cats': 'Contas por categoria',
@@ -2759,6 +2810,9 @@ window.I18N.pt = {
   'edit.follow': 'Seguir usuário',
   'edit.followPh': 'usuário',
   'edit.followHint': 'Descobre o servidor em que ele está e preenche o alvo acima.',
+  'edit.password': 'Senha',
+  'edit.passwordPh': 'Senha da conta',
+  'edit.passwordHint': 'Opcional. Armazenada criptografada apenas no seu PC.',
   'edit.followFinding': 'Buscando',
   'edit.followEnter': 'Digite um usuário',
   'edit.followNoCookie': 'Esta conta não tem cookie salvo',
@@ -3106,7 +3160,7 @@ window.I18N.pt = {
   'help.launchTitle': 'Abrir',
   'help.launchDesc': 'Clique em Iniciar em qualquer cartão. Defina um ID de jogo, link de servidor privado ou <code class="inline-code">placeId:jobId</code> pelo botão de editar para abrir direto num jogo ou servidor específico.',
   'help.rmbTitle': 'Clique com o botão direito em um cartão',
-  'help.rmbDesc': 'Mate a instância, copie o ID/usuário/cookie, ou abra a conta logada em um navegador real.',
+  'help.rmbDesc': 'Mate a instância, copie o ID/usuário/cookie/senha, ou abra a conta logada em um navegador real.',
   'help.mixerTitle': 'Mixer',
   'help.mixerDesc': 'Defina qualidade gráfica, limite de FPS e volume para cada instância. Aplica na próxima abertura.',
   'help.genTitle': 'Gerador',
@@ -3134,6 +3188,8 @@ window.I18N.pt = {
   'acct.noUser': 'Sem nome de usuário',
   'acct.copyCookie': 'Cookie copiado',
   'acct.noCookie': 'Nenhum cookie salvo para esta conta',
+  'acct.copyPassword': 'Senha copiada',
+  'acct.noPassword': 'Nenhuma senha salva para esta conta',
   'login.opening': 'Abrindo navegador…',
   'acct.refreshed': 'Dados da conta atualizados da Roblox',
   'acct.allCleared': 'Todas as contas foram removidas',
@@ -3181,6 +3237,21 @@ window.I18N.pt = {
   'mixer.untrackedN': ' ({n} não puderam ser identificadas)',
   'mixer.trimmedN': 'Memória reduzida de {t}/{tot} instância(s)',
   'mixer.noRunning': 'Nenhuma instância em execução',
+
+  // ── atualização automática ──
+  'update.title': 'Atualizações',
+  'update.auto': 'Atualizações automáticas',
+  'update.autoDesc': 'Verifica se há uma versão nova quando o app inicia e permite instalar com um clique.',
+  'update.check': 'Verificar atualizações',
+  'update.checking': 'Verificando…',
+  'update.uptodate': 'Você está na versão mais recente',
+  'update.checkFailed': 'Não foi possível verificar atualizações: {err}',
+  'update.availableTitle': 'Atualização disponível',
+  'update.downloadPrompt': 'A versão {v} está pronta. Baixar e instalar agora? O app será reiniciado.',
+  'update.later': 'Depois',
+  'update.install': 'Baixar e instalar',
+  'update.downloading': 'Baixando…',
+  'update.failed': 'Falha na atualização: {msg}',
 };
 
 </script>
@@ -3574,6 +3645,7 @@ async function continueInit() {
   positionNavSlider(); // covers landing on the default page without a goTo() call
   detectRobloxVersion();
   showAppVersion();
+  checkForUpdates(false); // background check; modal appears only if a newer version is hosted
   startStatusPoll();
   if (settings.autoTrim) startAutoTrimLoop();
   startTrackingLoop();
@@ -4176,6 +4248,7 @@ function showCardMenu(id, x, y) {
     <button class="ctx-item" onclick="ctxCopyId('${id}')"><span class="material-icons-round">tag</span>Copy user ID</button>
     <button class="ctx-item" onclick="ctxCopyUser('${id}')"><span class="material-icons-round">person</span>Copy username</button>
     <button class="ctx-item" onclick="ctxCopyCookie('${id}')"><span class="material-icons-round">cookie</span>Copy cookie</button>
+    ${a?.password ? `<button class="ctx-item" onclick="ctxCopyPassword('${id}')"><span class="material-icons-round">lock</span>Copy password</button>` : ''}
     <button class="ctx-item" onclick="ctxOpenBrowser('${id}')"><span class="material-icons-round">open_in_browser</span>Open in browser</button>
   `;
   document.body.appendChild(menu);
@@ -4269,6 +4342,7 @@ function ctxEdit(id) { closeCardMenu(); editAccount(id); }
 function ctxCopyId(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.userId) navigator.clipboard.writeText(a.userId).then(() => toast(t('acct.copyId'), 'ok')); else toast(t('acct.noId'), 'err'); }
 function ctxCopyUser(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.username) navigator.clipboard.writeText(a.username).then(() => toast(t('acct.copyUser'), 'ok')); else toast(t('acct.noUser'), 'err'); }
 function ctxCopyCookie(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.cookie) navigator.clipboard.writeText(a.cookie).then(() => toast(t('acct.copyCookie'), 'ok')); else toast(t('acct.noCookie'), 'err'); }
+function ctxCopyPassword(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.password) navigator.clipboard.writeText(a.password).then(() => toast(t('acct.copyPassword'), 'ok')); else toast(t('acct.noPassword'), 'err'); }
 async function ctxOpenBrowser(id) {
   closeCardMenu();
   const a = accounts.find(x => x.id === id);
@@ -4931,6 +5005,7 @@ function openEdit(id) {
   const refreshBtn = document.getElementById('edit-refresh-btn');
   if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.innerHTML = '<span class="material-icons-round" style="font-size:15px">refresh</span>Refresh from Roblox'; }
   document.getElementById('in-target').value = editAcc.gameTarget || '';
+  document.getElementById('in-password').value = editAcc.password || '';
   // Reset follow field/status -- it's a lookup tool, not a saved value.
   document.getElementById('in-follow').value = '';
   followSetStatus(t('edit.followHint'), '');
@@ -4971,13 +5046,23 @@ async function followUserLookup() {
   }
 }
 
+function togglePassVis() {
+  const inp = document.getElementById('in-password');
+  const icon = document.getElementById('pass-vis-icon');
+  if (!inp || !icon) return;
+  const isPass = inp.type === 'password';
+  inp.type = isPass ? 'text' : 'password';
+  icon.textContent = isPass ? 'visibility' : 'visibility_off';
+}
+
 async function saveEdit() {
   if (!editAcc) return;
   const target = document.getElementById('in-target').value.trim();
   const nickname = document.getElementById('in-nickname').value.trim();
   const description = document.getElementById('in-description').value.trim();
+  const password = document.getElementById('in-password').value;
   const categoryId = _editCatId || null;
-  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, categoryId });
+  const updated = await api.updateAccount(editAcc.id, { gameTarget: target, nickname, description, categoryId, password });
   if (updated) {
     const idx = accounts.findIndex(a => a.id === editAcc.id);
     if (idx !== -1) {
@@ -6787,7 +6872,8 @@ async function manAddAccount() {
   const btn = document.querySelector('#man-status .btn-primary');
   if (btn) btn.disabled = true;
   try {
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', nickname: '' });
+    const password = _manualCreds?.password || '';
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: res.cookie, gameTarget: '', nickname: '', password });
     if (a) {
       accounts.push(a); render();
       toast(t('gen.added', { user: res.username }), 'ok');
@@ -6911,7 +6997,8 @@ async function genHistAdd(i) {
   try {
     const res = await api.validateCookie(h.cookie);
     if (!res || !res.username) { toast(t('gen.cookieInvalid'), 'err'); return; }
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '' });
+    const password = h.password || '';
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: h.cookie, gameTarget: '', nickname: '', password });
     if (a) { accounts.push(a); render(); toast(t('gen.added', { user: res.username }), 'ok'); }
   } catch(e) { toast(t('acct.addFailed', { msg: e.message }), 'err'); }
 }
@@ -6923,7 +7010,8 @@ async function genAddToAccounts() {
   try {
     const res = await api.validateCookie(_lastGenData.cookie);
     if (!res || !res.username) { toast(t('gen.cookieInvalid'), 'err'); if(btn)btn.disabled=false; return; }
-    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: _lastGenData.cookie, gameTarget: '', nickname: '' });
+    const password = _lastGenData.password || '';
+    const a = await api.addAccount({ username: res.username, userId: res.userId, cookie: _lastGenData.cookie, gameTarget: '', nickname: '', password });
     if (a) { accounts.push(a); render(); toast(t('gen.added', { user: res.username }), 'ok'); }
     if(btn)btn.disabled=false;
   } catch(e) { toast(t('common.failed', { msg: e.message }), 'err'); if(btn)btn.disabled=false; }
@@ -7231,6 +7319,67 @@ function saveRegionPicker() {
     renderRegionBoxes();
   });
 })();
+
+// ── Auto-update ─────────────────────────────────────────────────────────────
+// Uses tauri-plugin-updater (see tauri-bridge.js + UPDATING.md). Checks at
+// startup; shows a modal when a newer version is hosted. The web build stubs
+// these calls out (api.checkForUpdates resolves null there).
+let _updateAvailable = null;
+let _updateChecking = false;
+
+async function checkForUpdates(manual) {
+  if (!api.checkForUpdates || _updateChecking) return;
+  _updateChecking = true;
+  const btn = document.getElementById('btn-check-updates');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spin"></div>' + esc(t('update.checking')); }
+  try {
+    const u = await api.checkForUpdates();
+    if (u && u.version) {
+      _updateAvailable = u;
+      logEntry('info', 'system', 'Update available: v' + u.version + (u.body ? ' — ' + u.body.split('\n')[0] : ''), { version: u.version });
+      openUpdateModal();
+    } else {
+      _updateAvailable = null;
+      if (manual) toast(t('update.uptodate'), 'ok');
+    }
+  } catch (e) {
+    if (manual) toast(t('update.checkFailed', { err: (e && e.message) || e }), 'err');
+  } finally {
+    _updateChecking = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round" style="font-size:15px">system_update_alt</span>' + esc(t('update.check')); }
+  }
+}
+
+function openUpdateModal() {
+  if (!_updateAvailable) return;
+  const u = _updateAvailable;
+  const desc = document.getElementById('update-desc');
+  if (desc) desc.textContent = t('update.downloadPrompt', { v: u.version });
+  const notes = document.getElementById('update-notes');
+  if (notes) {
+    if (u.body) { notes.style.display = ''; notes.textContent = u.body; }
+    else notes.style.display = 'none';
+  }
+  const st = document.getElementById('update-status');
+  if (st) { st.className = 'mst hidden'; st.innerHTML = ''; }
+  const btn = document.getElementById('btn-update-install');
+  if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round" style="font-size:15px">download</span>' + esc(t('update.install')); }
+  openModal('m-update');
+}
+
+async function installUpdate() {
+  if (!_updateAvailable || !api.installUpdate) return;
+  const btn = document.getElementById('btn-update-install');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spin"></div>' + esc(t('update.downloading')); }
+  try {
+    await api.installUpdate(_updateAvailable);
+    // Success: the installer relaunches the app (NSIS). Nothing else to do.
+  } catch (e) {
+    const st = document.getElementById('update-status');
+    if (st) { st.className = 'mst err'; st.innerHTML = '<span class="material-icons-round">error_outline</span>' + esc(t('update.failed', { msg: (e && e.message) || e })); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round" style="font-size:15px">download</span>' + esc(t('update.install')); }
+  }
+}
 
 </script>
 <!-- help modal -->

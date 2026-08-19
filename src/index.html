@@ -1036,6 +1036,14 @@
       <input type="text" id="in-target" data-i18n-ph="edit.targetPh" placeholder="e.g. 6872265039 or https://www.roblox.com/share?..."/>
     </div>
     <div class="field">
+      <label for="in-password" data-i18n="edit.password">Password</label>
+      <div style="display:flex;gap:8px;align-items:stretch">
+        <input type="password" id="in-password" data-i18n-ph="edit.passwordPh" placeholder="Account password" style="flex:1;min-width:0" autocomplete="off" spellcheck="false"/>
+        <button class="btn btn-ghost" style="flex-shrink:0;height:34px;padding:0 8px" onclick="togglePassVis()" title="Show/hide"><span class="material-icons-round" style="font-size:16px" id="pass-vis-icon">visibility_off</span></button>
+      </div>
+      <div class="field-hint" data-i18n="edit.passwordHint">Optional. Stored encrypted on your PC only.</div>
+    </div>
+    <div class="field">
       <button class="btn btn-ghost" id="edit-refresh-btn" style="width:100%;justify-content:center" onclick="refreshEditFromRoblox()">
         <span class="material-icons-round" style="font-size:15px">refresh</span><span data-i18n="edit.refresh">Refresh from Roblox</span>
       </button>

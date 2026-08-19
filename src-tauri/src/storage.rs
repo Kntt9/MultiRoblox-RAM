@@ -18,22 +18,26 @@ pub fn load_accounts_raw() -> Vec<Value> {
 // Decrypt failure means the cookie is unusable -- flag it immediately
 // instead of waiting on the renderer's async validation to find out.
 pub fn decrypt_account(state: &AppState, mut a: Value) -> Value {
-    if let Some(cookie) = a.get("cookie").and_then(|v| v.as_str()) {
-        if !cookie.is_empty() {
-            let dec = decrypt_field(state, cookie);
-            if dec.is_none() {
-                a["_cookieInvalid"] = Value::Bool(true);
+    for field in ["cookie", "password"] {
+        if let Some(v) = a.get(field).and_then(|v| v.as_str()) {
+            if !v.is_empty() {
+                let dec = decrypt_field(state, v);
+                if field == "cookie" && dec.is_none() {
+                    a["_cookieInvalid"] = Value::Bool(true);
+                }
+                a[field] = Value::String(dec.unwrap_or_default());
             }
-            a["cookie"] = Value::String(dec.unwrap_or_default());
         }
     }
     a
 }
 fn encrypt_account(state: &AppState, mut a: Value) -> Result<Value, String> {
-    if let Some(cookie) = a.get("cookie").and_then(|v| v.as_str()) {
-        if !cookie.is_empty() && !is_encrypted(cookie) {
-            let enc = encrypt_field(state, cookie)?;
-            a["cookie"] = Value::String(enc);
+    for field in ["cookie", "password"] {
+        if let Some(v) = a.get(field).and_then(|v| v.as_str()) {
+            if !v.is_empty() && !is_encrypted(v) {
+                let enc = encrypt_field(state, v)?;
+                a[field] = Value::String(enc);
+            }
         }
     }
     a["_enc"] = Value::Bool(true);
