@@ -35,6 +35,7 @@
   --smooth:cubic-bezier(.4,0,.2,1);
   --dur:160ms;
   --tb:52px;--sb:232px;
+  --theme-dur:0ms;
 }
 body.light{
   --bg:#f4f5f8;--s1:#ffffff;--s2:#eceef2;--s3:#e2e4ea;--s4:#d3d6de;
@@ -49,6 +50,9 @@ body.light{
   --shadow-1:0 1px 2px rgba(20,24,40,.08);
   --shadow-2:0 10px 28px -10px rgba(20,24,40,.18);
   --shadow-3:0 24px 64px -14px rgba(20,24,40,.25);
+}
+body.theme-transitioning,body.theme-transitioning *,body.theme-transitioning *::before,body.theme-transitioning *::after{
+  transition:background-color 250ms var(--smooth),color 250ms var(--smooth),border-color 250ms var(--smooth),box-shadow 250ms var(--smooth)!important;
 }
 body{
   font-family:var(--font);
@@ -909,3 +913,45 @@ body.theme-forest{--bg:#0a1410;--s1:#0f1d16;--s2:#13251c;--s3:#1a3025;--s4:#2340
 body.theme-amber{--bg:#161106;--s1:#1e170a;--s2:#271e0d;--s3:#332813;--s4:#41331b;--bd:rgba(255,200,110,.1);--bd2:rgba(255,200,110,.2);--ac:#f59e0b;--ac-h:#fbbf24;--ac2:rgba(245,158,11,.3);--ac3:rgba(245,158,11,.48)}
 body.theme-rose{--bg:#170b11;--s1:#200f18;--s2:#29131f;--s3:#351a29;--s4:#432235;--bd:rgba(255,150,190,.1);--bd2:rgba(255,150,190,.2);--ac:#fb7185;--ac-h:#fda4af;--ac2:rgba(251,113,133,.3);--ac3:rgba(251,113,133,.48)}
 body.theme-graphite{--bg:#0d0e10;--s1:#131418;--s2:#1a1c21;--s3:#23262d;--s4:#2e323a;--bd:rgba(160,170,190,.1);--bd2:rgba(160,170,190,.2);--ac:#94a3b8;--ac-h:#cbd5e1;--ac2:rgba(148,163,184,.28);--ac3:rgba(148,163,184,.45)}
+
+/* ── high contrast ──────────────────────────────────────────────────── */
+body.high-contrast{--t1:#ffffff;--t2:#c0c4ce;--t3:#9397a3;--bd:rgba(255,255,255,.12);--bd2:rgba(255,255,255,.22);--bd3:rgba(255,255,255,.35)}
+body.light.high-contrast{--t1:#000000;--t2:#2a2e3c;--t3:#4f5462;--bd:rgba(0,0,0,.16);--bd2:rgba(0,0,0,.28);--bd3:rgba(0,0,0,.42)}
+
+/* ── theme category tabs ────────────────────────────────────────────── */
+.theme-cat-bar{display:flex;gap:2px;padding:3px;margin:0 0 14px;background:var(--s2);border:1px solid var(--bd);border-radius:10px;width:fit-content}
+.theme-cat-btn{padding:7px 14px;border-radius:7px;border:none;background:transparent;color:var(--t2);font-family:var(--font);font-size:11.5px;font-weight:500;white-space:nowrap;cursor:pointer;transition:background var(--dur) var(--smooth),color var(--dur) var(--smooth)}
+.theme-cat-btn:not(.active):hover{background:color-mix(in srgb,var(--t1) 9%,transparent);color:var(--t1)}
+.theme-cat-btn.active{background:var(--ac);color:#fff}
+
+/* ── custom theme panel ─────────────────────────────────────────────── */
+.theme-custom-panel{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-1)}
+.theme-custom-title{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:14px;letter-spacing:-.01em}
+.theme-custom-row{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.theme-custom-row:last-child{margin-bottom:0}
+.theme-color-pick{display:flex;align-items:center;gap:10px;flex:1}
+.theme-color-pick label{font-size:12px;font-weight:500;color:var(--t2);min-width:80px}
+.theme-color-input{position:relative;width:38px;height:38px;border-radius:8px;overflow:hidden;border:2px solid var(--bd);cursor:pointer;flex-shrink:0;transition:border-color var(--dur) var(--smooth)}
+.theme-color-input:hover{border-color:var(--bd2)}
+.theme-color-input input[type=color]{position:absolute;inset:-6px;width:calc(100% + 12px);height:calc(100% + 12px);border:none;cursor:pointer;padding:0}
+.theme-color-hex{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--t2);min-width:70px}
+.theme-custom-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+
+/* ── theme extras (radius, contrast, auto) ──────────────────────────── */
+.theme-extras{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-1)}
+.theme-extras-title{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:14px;letter-spacing:-.01em}
+.theme-radius-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.theme-radius-row label{font-size:12px;font-weight:500;color:var(--t2);min-width:100px}
+.theme-radius-row input[type=range]{flex:1;max-width:200px}
+.theme-radius-val{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--t1);min-width:36px;text-align:right}
+
+/* ── theme card for "new theme" ─────────────────────────────────────── */
+.theme-card-add{border:2px dashed var(--bd2);display:flex;align-items:center;justify-content:center;min-height:155px;cursor:pointer;background:transparent}
+.theme-card-add:hover{border-color:var(--ac);background:var(--ac2)}
+.theme-card-add-inner{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--t3);transition:color var(--dur) var(--smooth)}
+.theme-card-add:hover .theme-card-add-inner{color:var(--t1)}
+.theme-card-add .material-icons-round{font-size:24px}
+.theme-card-add span{font-size:12px;font-weight:500}
+
+/* ── theme import/export row ────────────────────────────────────────── */
+.theme-ie-row{display:flex;gap:8px;margin-bottom:16px}

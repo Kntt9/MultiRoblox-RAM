@@ -300,7 +300,7 @@ footer{border-top:1px solid var(--bd);padding:52px 0 36px;background:var(--s1)}
   <div class="container topbar-in">
     <a class="brand" href="#top">
       <span class="brand-mark">K</span>
-      KNT Manager<small>v0.6.1</small>
+      KNT Manager<small data-dl-version>v0.6.0</small>
     </a>
     <nav class="top-nav" aria-label="Navegação principal">
       <a href="#recursos">Recursos</a>
@@ -325,11 +325,11 @@ footer{border-top:1px solid var(--bd);padding:52px 0 36px;background:var(--s1)}
       <h1>Gerencie suas contas Roblox em <span class="grad">um único lugar</span></h1>
       <p class="lead">Abra dezenas de instâncias ao mesmo tempo, organize contas em grupos, controle qualidade, FPS e volume e monitore tudo em um painel limpo e rápido — no seu PC, sem nuvem.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary btn-dl" href="https://github.com/Kntt9/MultiRoblox-RAM/releases/latest/download/MultiRoblox_0.6.1_x64-setup.exe">
+        <a class="btn btn-primary btn-dl" href="MultiRoblox_0.6.0_x64-setup.exe" download data-dl-setup>
           <span class="material-icons-round">install_desktop</span>
-          <span>Baixar para Windows<small>Instalador · v0.6.1</small></span>
+          <span data-dl-setup-label>Baixar para Windows<small>Instalador · v0.6.0 · 3,0 MB</small></span>
         </a>
-        <a class="btn btn-ghost btn-dl" href="../dist/MultiRoblox.exe" download>
+        <a class="btn btn-ghost btn-dl" href="MultiRoblox.exe" download data-dl-portable>
           <span class="material-icons-round">save_alt</span>
           <span>Versão portátil<small>Sem instalação · 8,5 MB</small></span>
         </a>
@@ -530,21 +530,21 @@ footer{border-top:1px solid var(--bd);padding:52px 0 36px;background:var(--s1)}
 <section id="download" style="background:var(--s1);border-top:1px solid var(--bd)">
   <div class="container">
     <div class="dl-zone reveal">
-      <span class="dl-badge">v0.6.1 · Windows 10 / 11</span>
+      <span class="dl-badge" data-dl-version>v0.6.0</span> · Windows 10 / 11
       <h2>Baixe o KNT Manager</h2>
       <p class="sub">Grátis, sem cadastro. Escolha o instalador (recomendado — cria atalho no menu Iniciar e mantém as atualizações automáticas) ou o executável portátil.</p>
       <div class="dl-row">
-        <a class="dl-btn" href="https://github.com/Kntt9/MultiRoblox-RAM/releases/latest/download/MultiRoblox_0.6.1_x64-setup.exe">
+        <a class="dl-btn" href="MultiRoblox_0.6.0_x64-setup.exe" download data-dl-setup>
           <span class="material-icons-round">install_desktop</span>
-          <span>Baixar para Windows<small>Instalador · MultiRoblox_0.6.1_x64-setup.exe</small></span>
+          <span data-dl-setup-label>Baixar para Windows<small>Instalador · MultiRoblox_0.6.0_x64-setup.exe · 3,0 MB</small></span>
         </a>
-        <a class="dl-btn dl-alt" href="../dist/MultiRoblox.exe" download>
+        <a class="dl-btn dl-alt" href="MultiRoblox.exe" download data-dl-portable>
           <span class="material-icons-round">save_alt</span>
-          <span>Baixar portátil<small>MultiRoblox.exe · 8,5 MB · sem instalação</small></span>
+          <span data-dl-portable-label>Baixar portátil<small>MultiRoblox.exe · 8,5 MB · sem instalação</small></span>
         </a>
       </div>
       <div class="dl-meta">
-        <span>Versão <b>v0.6.1</b></span><span class="sep">•</span>
+        <span>Versão <b data-dl-version>v0.6.0</b></span><span class="sep">•</span>
         <span>Instalador <b>3,0 MB</b></span><span class="sep">•</span>
         <span>Portátil <b>8,5 MB</b></span><span class="sep">•</span>
         <span>Atualizações <b>gratuitas e automáticas</b></span>
@@ -571,16 +571,6 @@ footer{border-top:1px solid var(--bd);padding:52px 0 36px;background:var(--s1)}
     </div>
     <div class="clog">
       <div class="clog-item current reveal">
-        <div class="clog-ver">v0.6.1<span class="date">19 de agosto de 2026</span></div>
-        <div class="clog-body">
-          <ul>
-            <li><span class="material-icons-round">check</span> Salvar senha de cada conta no modal de edição (criptografada no PC).</li>
-            <li><span class="material-icons-round">check</span> Copiar senha pelo menu do card (clique direito na conta).</li>
-            <li><span class="material-icons-round">check</span> Senhas do gerador e criação manual são salvas automaticamente ao adicionar a conta.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="clog-item reveal">
         <div class="clog-ver">v0.6.0<span class="date">16 de agosto de 2026</span></div>
         <div class="clog-body">
           <ul>
@@ -809,3 +799,50 @@ document.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
+
+<script>
+// ── Auto-update download links from GitHub API ──
+(async function() {
+  try {
+    const resp = await fetch('https://api.github.com/repos/Kntt9/MultiRoblox-RAM/releases/latest');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const tag = data.tag_name || '';
+    const version = tag.replace(/^v/, '');
+    if (!version) return;
+    const setupAsset = (data.assets || []).find(a => a.name && a.name.endsWith('-setup.exe'));
+    const setupUrl = setupAsset ? setupAsset.browser_download_url : '#';
+    const setupSize = setupAsset ? (setupAsset.size / (1024 * 1024)).toFixed(1) + ' MB' : '';
+    const exeAsset = (data.assets || []).find(a => a.name === 'MultiRoblox.exe');
+    const exeUrl = exeAsset ? exeAsset.browser_download_url : '#';
+    const exeSize = exeAsset ? (exeAsset.size / (1024 * 1024)).toFixed(1) + ' MB' : '';
+
+    // Update all version strings
+    document.querySelectorAll('[data-dl-version]').forEach(el => el.textContent = 'v' + version);
+    document.querySelectorAll('[data-dl-version-tag]').forEach(el => el.textContent = tag);
+
+    // Update installer download links
+    document.querySelectorAll('[data-dl-setup]').forEach(el => {
+      el.href = setupUrl;
+      el.setAttribute('download', '');
+    });
+    // Update installer labels
+    document.querySelectorAll('[data-dl-setup-label]').forEach(el => {
+      el.innerHTML = 'Baixar para Windows<small>Instalador · ' + (setupAsset ? setupAsset.name : '') + (setupSize ? ' · ' + setupSize : '') + '</small>';
+    });
+
+    // Update portable download links
+    document.querySelectorAll('[data-dl-portable]').forEach(el => {
+      el.href = exeUrl;
+      el.setAttribute('download', '');
+    });
+    document.querySelectorAll('[data-dl-portable-label]').forEach(el => {
+      el.innerHTML = 'Baixar portátil<small>MultiRoblox.exe' + (exeSize ? ' · ' + exeSize : '') + ' · sem instalação</small>';
+    });
+
+    // Update stats
+    document.querySelectorAll('[data-dl-setup-size]').forEach(el => el.textContent = setupSize || '3,0 MB');
+    document.querySelectorAll('[data-dl-setup-name]').forEach(el => el.textContent = setupAsset ? setupAsset.name : 'MultiRoblox_setup.exe');
+  } catch(e) { console.log('Could not fetch latest release:', e); }
+})();
+</script>

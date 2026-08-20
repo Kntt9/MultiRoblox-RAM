@@ -263,67 +263,32 @@ pub async fn open_signup_window(
     {
         let closed2 = closed.clone();
         window.on_window_event(move |event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
                 closed2.store(true, Ordering::SeqCst);
             }
         });
     }
 
-    let cookie_url = match Url::parse("https://www.roblox.com") {
-        Ok(u) => u,
-        Err(_) => {
-            return SignupResult {
-                success: false,
-                cookie: None,
-                username: None,
-                user_id: None,
-                closed: false,
-                error: Some("Invalid cookie URL".into()),
-            };
-        }
-    };
+    let result = async {
+        let cookie_url = match Url::parse("https://www.roblox.com") {
+            Ok(u) => u,
+            Err(_) => {
+                return SignupResult {
+                    success: false,
+                    cookie: None,
+                    username: None,
+                    user_id: None,
+                    closed: false,
+                    error: Some("Invalid cookie URL".into()),
+                };
+            }
+        };
 
-    let started = Instant::now();
-    let timeout = Duration::from_secs(10 * 60);
-    loop {
-        if started.elapsed() >= timeout {
-            return SignupResult {
-                success: false,
-                cookie: None,
-                username: None,
-                user_id: None,
-                closed: false,
-                error: Some(
-                    "Timed out waiting for you to finish creating the account. If you did create \
-                     it, add it via Add Account > Paste Cookie (copy the .ROBLOSECURITY value \
-                     from the signup window)."
-                        .into(),
-                ),
-            };
-        }
-        if closed.load(Ordering::SeqCst) {
-            return SignupResult {
-                success: false,
-                cookie: None,
-                username: None,
-                user_id: None,
-                closed: true,
-                error: None,
-            };
-        }
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        let found = window
-            .cookies_for_url(cookie_url.clone())
-            .ok()
-            .and_then(|cookies| {
-                cookies
-                    .into_iter()
-                    .find(|c| c.name() == ".ROBLOSECURITY" && c.value().len() > 100)
-            })
-            .map(|c| c.value().to_string());
-        if let Some(cookie_val) = found {
-            let info = crate::roblox_api::fetch_user_info(state, &cookie_val).await;
-            if !info.ok {
+        let started = Instant::now();
+        let timeout = Duration::from_secs(10 * 60);
+        loop {
+            if started.elapsed() >= timeout {
                 return SignupResult {
                     success: false,
                     cookie: None,
@@ -331,19 +296,60 @@ pub async fn open_signup_window(
                     user_id: None,
                     closed: false,
                     error: Some(
-                        info.reason
-                            .unwrap_or_else(|| "Could not verify the new account.".into()),
+                        "Timed out waiting for you to finish creating the account. If you did create \
+                         it, add it via Add Account > Paste Cookie (copy the .ROBLOSECURITY value \
+                         from the signup window)."
+                            .into(),
                     ),
                 };
             }
-            return SignupResult {
-                success: true,
-                cookie: Some(cookie_val),
-                username: info.username,
-                user_id: info.user_id,
-                closed: false,
-                error: None,
-            };
+            if closed.load(Ordering::SeqCst) {
+                return SignupResult {
+                    success: false,
+                    cookie: None,
+                    username: None,
+                    user_id: None,
+                    closed: true,
+                    error: None,
+                };
+            }
+            tokio::time::sleep(Duration::from_millis(1200)).await;
+            let found = window
+                .cookies_for_url(cookie_url.clone())
+                .ok()
+                .and_then(|cookies| {
+                    cookies
+                        .into_iter()
+                        .find(|c| c.name() == ".ROBLOSECURITY" && c.value().len() > 100)
+                })
+                .map(|c| c.value().to_string());
+            if let Some(cookie_val) = found {
+                let info = crate::roblox_api::fetch_user_info(state, &cookie_val).await;
+                if !info.ok {
+                    return SignupResult {
+                        success: false,
+                        cookie: None,
+                        username: None,
+                        user_id: None,
+                        closed: false,
+                        error: Some(
+                            info.reason
+                                .unwrap_or_else(|| "Could not verify the new account.".into()),
+                        ),
+                    };
+                }
+                return SignupResult {
+                    success: true,
+                    cookie: Some(cookie_val),
+                    username: info.username,
+                    user_id: info.user_id,
+                    closed: false,
+                    error: None,
+                };
+            }
         }
     }
+    .await;
+    let _ = window.destroy();
+    result
 }

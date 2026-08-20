@@ -1,51 +1,116 @@
-# Release automático (auto-update): ao dar push numa tag v* (ex.: v0.6.0),
-# compila o instalador NSIS assinado, gera o latest-version.json e cria um
-# GitHub Release com os 3 arquivos. Os apps instalados detectam e se atualizam.
-#
-# Pré-requisito: configurar 2 secrets no repositório (Settings → Secrets):
-#   TAURI_SIGNING_KEY_B64      → conteúdo do private.key em base64:
-#                                base64 -w0 src-tauri/.updater-secret/private.key
-#   TAURI_SIGNING_KEY_PASSWORD → senha da chave (arquivo password.txt)
-name: Release (auto-update)
+name: Release
 
 on:
   push:
-    tags: ['v*']
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Build NSIS + updater artifacts (assinado)
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Read version from tauri.conf.json
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION, tag: $TAG"
+
+      - name: Build Tauri app
         shell: bash
         env:
-          TAURI_SIGNING_KEY_B64: ${{ secrets.TAURI_SIGNING_KEY_B64 }}
-          TAURI_SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PASSWORD }}
-        run: |
-          echo "$TAURI_SIGNING_KEY_B64" | base64 -d > .updater-private.key
-          export TAURI_SIGNING_PRIVATE_KEY="$(cat .updater-private.key)"
-          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_KEY_PASSWORD"
-          npx tauri build --bundles nsis
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build
 
-      - name: Assemble release/ (manifest + artifacts)
+      - name: Find build artifacts
+        id: artifacts
         shell: bash
-        run: node scripts/make-release.mjs --repo ${{ github.repository }} --notes "Release ${{ github.ref_name }} — salvar e copiar senha das contas."
+        run: |
+          SETUP=$(find src-tauri/target/release/bundle/nsis -name "*-setup.exe" | head -1)
+          SIG="${SETUP}.sig"
+          echo "setup=$SETUP" >> $GITHUB_OUTPUT
+          echo "sig=$SIG" >> $GITHUB_OUTPUT
+          echo "Setup: $SETUP"
+          echo "Sig: $SIG"
+
+      - name: Read signature
+        id: sig
+        shell: bash
+        run: |
+          SIG_CONTENT=$(cat "${{ steps.artifacts.outputs.sig }}")
+          echo "content=$SIG_CONTENT" >> $GITHUB_OUTPUT
+
+      - name: Generate latest-version.json
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          SETUP_NAME=$(basename "${{ steps.artifacts.outputs.setup }}")
+          SIGNATURE="${{ steps.sig.outputs.content }}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${SETUP_NAME}"
+          
+          cat > latest-version.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "${TAG}: See https://github.com/${{ github.repository }}/releases/tag/${TAG} for details.",
+            "pub_date": "${PUB_DATE}",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${SIGNATURE}",
+                "url": "${DOWNLOAD_URL}"
+              }
+            }
+          }
+          EOF
+          echo "Generated latest-version.json:"
+          cat latest-version.json
 
       - name: Create GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ github.ref_name }}" release/* --title "KNT Manager ${{ github.ref_name }}" --generate-notes
+        uses: softprops/action-gh-release@v2
+        with:
+          name: KNT Manager v${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          body: |
+            ## KNT Manager v${{ steps.version.outputs.version }}
+            
+            ### Instalador
+            Baixe o `MultiRoblox_${{ steps.version.outputs.version }}_x64-setup.exe` abaixo.
+            
+            ### Atualização automática
+            Quem já tem o app instalado receberá a atualização automaticamente ao reiniciar.
+            
+            ### Changelog
+            Veja as mudanças na descrição do commit ou no PR.
+          files: |
+            ${{ steps.artifacts.outputs.setup }}
+            ${{ steps.artifacts.outputs.sig }}
+            latest-version.json
+          draft: false
+          prerelease: false

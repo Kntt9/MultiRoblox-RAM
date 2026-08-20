@@ -65,6 +65,7 @@ function setLanguage(lang, persist) {
   // so they switch language along with everything else.
   if (typeof applySettings === 'function' && typeof settings !== 'undefined' && settings) applySettings();
   if (typeof renderBackupHistory === 'function') renderBackupHistory();
+  if (typeof renderThemePage === 'function') renderThemePage();
   if (persist !== false) {
     try { localStorage.setItem('mr-lang', _lang); } catch {}
     settings.language = _lang;
@@ -384,32 +385,452 @@ async function continueInit() {
 }
 init();
 
-// ── Theme ──────────────────────────────────────────────────────────────────
+// ── Theme engine ──────────────────────────────────────────────────────────
 var THEMES = ['dark','light','midnight','aurora','sunset','crimson','ocean','grape','forest','amber','rose','graphite'];
-function applyTheme(name) {
-  if (THEMES.indexOf(name) < 0) name = 'dark';
+var _previewedKeys = [];
+var _customThemes = [];
+var _themeCat = 'all';
+
+// ── WCAG luminance helpers ────────────────────────────────────────────────
+function _srgbToLinear(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function _luminance(r, g, b) { return 0.2126 * _srgbToLinear(r) + 0.7152 * _srgbToLinear(g) + 0.0722 * _srgbToLinear(b); }
+function _contrastRatio(l1, l2) { const lighter = Math.max(l1, l2), darker = Math.min(l1, l2); return (lighter + 0.05) / (darker + 0.05); }
+function _hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  return [parseInt(hex.substr(0,2),16), parseInt(hex.substr(2,2),16), parseInt(hex.substr(4,2),16)];
+}
+function _lighten(hex, amt) {
+  const [r,g,b] = _hexToRgb(hex);
+  const lr = Math.min(255, r + Math.round((255-r)*amt));
+  const lg = Math.min(255, g + Math.round((255-g)*amt));
+  const lb = Math.min(255, b + Math.round((255-b)*amt));
+  return '#'+[lr,lg,lb].map(c=>c.toString(16).padStart(2,'0')).join('');
+}
+function _darken(hex, amt) {
+  const [r,g,b] = _hexToRgb(hex);
+  const dr = Math.max(0, Math.round(r*(1-amt)));
+  const dg = Math.max(0, Math.round(g*(1-amt)));
+  const db = Math.max(0, Math.round(b*(1-amt)));
+  return '#'+[dr,dg,db].map(c=>c.toString(16).padStart(2,'0')).join('');
+}
+function _rgba(hex, alpha) {
+  const [r,g,b] = _hexToRgb(hex);
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
+
+// ── Core theme variable generator ─────────────────────────────────────────
+function generateThemeVars(accent, bg, surface, isDark) {
+  const bgLum = _luminance(..._hexToRgb(bg));
+  const isLight = bgLum > 0.5;
+  // Surfaces: derive from surface input
+  const s2 = isDark ? _darken(surface, 0.05) : _lighten(surface, 0.04);
+  const s3 = isDark ? _darken(surface, 0.12) : _lighten(surface, 0.08);
+  const s4 = isDark ? _darken(surface, 0.18) : _lighten(surface, 0.14);
+  // Borders
+  const bdAlpha = isDark ? 0.065 : 0.09;
+  const bd2Alpha = isDark ? 0.12 : 0.16;
+  const bd3Alpha = isDark ? 0.2 : 0.28;
+  const bdBase = isDark ? '255,255,255' : '10,14,30';
+  // Accent
+  const acH = _lighten(accent, 0.12);
+  const [acR,acG,acB] = _hexToRgb(accent);
+  // Text: WCAG-based
+  let t1, t2, t3;
+  if (isLight) {
+    t1 = '#10121a'; t2 = '#4f5462'; t3 = '#8b90a0';
+  } else {
+    t1 = '#f2f3f6'; t2 = '#a7aab3'; t3 = '#70737c';
+  }
+  // Enforce minimum 4.5:1 contrast on t1
+  const t1Lum = _luminance(..._hexToRgb(t1));
+  const ratio = _contrastRatio(t1Lum, bgLum);
+  if (ratio < 4.5) { t1 = isLight ? '#000000' : '#ffffff'; }
+  // Semantic colors
+  const green = isLight ? '#128a57' : '#3ecf8e';
+  const red = isLight ? '#d64646' : '#f06f6f';
+  const amber = isLight ? '#b45309' : '#f5a623';
+  const blue = isLight ? '#2563eb' : '#3b82f6';
+  // Shadows
+  const shBase = isDark ? 'rgba(0,0,0,' : 'rgba(20,24,40,';
+  const sh1a = isDark ? '.3' : '.08';
+  const sh2a = isDark ? '.55' : '.18';
+  const sh3a = isDark ? '.65' : '.25';
+  return {
+    '--bg': bg, '--s1': surface, '--s2': s2, '--s3': s3, '--s4': s4,
+    '--bd': 'rgba('+bdBase+','+bdAlpha+')', '--bd2': 'rgba('+bdBase+','+bd2Alpha+')', '--bd3': 'rgba('+bdBase+','+bd3Alpha+')',
+    '--t1': t1, '--t2': t2, '--t3': t3,
+    '--ac': accent, '--ac-h': acH, '--ac2': _rgba(accent, 0.3), '--ac3': _rgba(accent, 0.5),
+    '--green': green, '--gd': _rgba(green, 0.12),
+    '--blue': blue, '--bld': _rgba(blue, 0.12),
+    '--red': red, '--rd': _rgba(red, 0.12),
+    '--amber': amber, '--ad': _rgba(amber, 0.12),
+    '--red-rgb': _hexToRgb(red).join(','),
+    '--shadow-1': '0 1px 2px '+shBase+sh1a+')',
+    '--shadow-2': '0 10px 28px -10px '+shBase+sh2a+')',
+    '--shadow-3': '0 24px 64px -14px '+shBase+sh3a+')',
+  };
+}
+
+// ── Reapply everything (theme + radius + high contrast) ───────────────────
+function _reapplyActiveTheme() {
+  const name = currentTheme();
+  // Clear custom inline styles first
+  const customKeys = Object.keys(generateThemeVars('#5c5ce0','#0b0c0f','#141519',true));
+  customKeys.forEach(k => document.documentElement.style.removeProperty(k));
+  document.documentElement.style.removeProperty('--r');
+  document.documentElement.style.removeProperty('--r2');
+  document.documentElement.style.removeProperty('--r3');
+  // Apply class-based theme
   document.body.classList.remove('light');
   THEMES.forEach(t => { if (t !== 'dark' && t !== 'light') document.body.classList.remove('theme-' + t); });
-  if (name === 'light') document.body.classList.add('light');
-  else if (name !== 'dark') document.body.classList.add('theme-' + name);
-  document.querySelectorAll('.theme-card').forEach(c => c.classList.toggle('sel', c.dataset.theme === name));
+  document.body.classList.remove('custom-theme');
+  if (name.startsWith('custom:')) {
+    const id = name.slice(7);
+    const ct = _customThemes.find(t => t.id === id);
+    if (ct) {
+      const vars = generateThemeVars(ct.accent, ct.bg, ct.surface, ct.isDark);
+      Object.entries(vars).forEach(([k,v]) => document.documentElement.style.setProperty(k, v));
+      document.body.classList.add('custom-theme');
+    } else { document.body.classList.add('light'); }
+  } else if (name === 'light') {
+    document.body.classList.add('light');
+  } else if (THEMES.indexOf(name) >= 0) {
+    document.body.classList.add('theme-' + name);
+  }
+  // High contrast
+  document.body.classList.toggle('high-contrast', _highContrast());
+  // Border radius
+  _applyBorderRadius();
+  // Update cards
+  document.querySelectorAll('.theme-card').forEach(c => {
+    const v = c.dataset.theme || '';
+    const isSel = (name === v) || (name.startsWith('custom:') && v === name);
+    c.classList.toggle('sel', isSel);
+  });
+  document.querySelectorAll('.theme-custom-card').forEach(c => {
+    c.classList.toggle('sel', name === 'custom:' + c.dataset.themeId);
+  });
 }
-function currentTheme() { try { return localStorage.getItem('ui-theme') || 'dark'; } catch { return 'dark'; } }
+
+// ── Theme apply with smooth transition ────────────────────────────────────
+function applyTheme(name) {
+  document.body.classList.add('theme-transitioning');
+  _reapplyActiveTheme();
+  setTimeout(() => document.body.classList.remove('theme-transitioning'), 300);
+}
 function setTheme(name) {
-  if (THEMES.indexOf(name) < 0) name = 'dark';
+  if (!name) return;
   applyTheme(name);
   try { localStorage.setItem('ui-theme', name); } catch {}
+  renderThemePage();
 }
+function currentTheme() { try { return localStorage.getItem('ui-theme') || 'dark'; } catch { return 'dark'; } }
+
+// ── Custom themes persistence ─────────────────────────────────────────────
+function _loadCustomThemes() {
+  try { _customThemes = JSON.parse(localStorage.getItem('mr-custom-themes') || '[]'); } catch { _customThemes = []; }
+}
+function _saveCustomThemes() {
+  try { localStorage.setItem('mr-custom-themes', JSON.stringify(_customThemes)); } catch {}
+}
+function _uniqueThemeName(name, excludeId) {
+  const all = THEMES.map(t => t).concat(_customThemes.filter(t => t.id !== excludeId).map(t => t.name));
+  let n = name, i = 2;
+  while (all.some(t => t.toLowerCase() === n.toLowerCase())) { n = name + ' (' + i + ')'; i++; }
+  return n;
+}
+
+// ── Hover preview ─────────────────────────────────────────────────────────
+function previewTheme(accent, bg, surface, isDark) {
+  clearPreview();
+  const vars = generateThemeVars(accent, bg, surface, isDark);
+  _previewedKeys = Object.keys(vars);
+  document.body.classList.add('theme-transitioning');
+  Object.entries(vars).forEach(([k,v]) => document.documentElement.style.setProperty(k, v));
+}
+function clearPreview() {
+  _previewedKeys.forEach(k => document.documentElement.style.removeProperty(k));
+  _previewedKeys = [];
+  document.body.classList.remove('theme-transitioning');
+  _reapplyActiveTheme();
+}
+
+// ── High contrast ─────────────────────────────────────────────────────────
+function _highContrast() { try { return localStorage.getItem('mr-high-contrast') === '1'; } catch { return false; } }
+function toggleHighContrast() {
+  const on = !_highContrast();
+  try { localStorage.setItem('mr-high-contrast', on ? '1' : '0'); } catch {}
+  document.body.classList.toggle('high-contrast', on);
+  const el = document.getElementById('set-highcontrast');
+  if (el) el.checked = on;
+}
+
+// ── Border radius ─────────────────────────────────────────────────────────
+function _savedRadius() { try { return parseInt(localStorage.getItem('mr-border-radius'), 10) || 12; } catch { return 12; } }
+function _applyBorderRadius() {
+  const r = _savedRadius();
+  document.documentElement.style.setProperty('--r', r + 'px');
+  document.documentElement.style.setProperty('--r2', Math.round(r * 0.67) + 'px');
+  document.documentElement.style.setProperty('--r3', Math.round(r * 0.5) + 'px');
+}
+function setBorderRadius(v) {
+  try { localStorage.setItem('mr-border-radius', String(v)); } catch {}
+  _applyBorderRadius();
+  const lbl = document.getElementById('radius-val');
+  if (lbl) lbl.textContent = v + 'px';
+}
+
+// ── Auto theme (day/night) ────────────────────────────────────────────────
+let _autoThemeTimer = null;
+function _autoThemeEnabled() { try { return localStorage.getItem('mr-auto-theme') === '1'; } catch { return false; } }
+function _autoThemeBase() { try { return localStorage.getItem('mr-auto-theme-base') || 'dark'; } catch { return 'dark'; } }
+function _autoThemeTick() {
+  if (!_autoThemeEnabled()) return;
+  const h = new Date().getHours();
+  const isDay = h >= 7 && h < 19;
+  const base = _autoThemeBase();
+  const isDarkBase = THEMES.indexOf(base) >= 0 && base !== 'light';
+  const target = isDay ? (isDarkBase ? 'light' : base) : base;
+  if (currentTheme() !== target) setTheme(target);
+}
+function toggleAutoTheme() {
+  const on = !_autoThemeEnabled();
+  try { localStorage.setItem('mr-auto-theme', on ? '1' : '0'); } catch {}
+  const base = currentTheme();
+  if (on) {
+    try { localStorage.setItem('mr-auto-theme-base', base.startsWith('custom:') ? 'dark' : base); } catch {}
+    _autoThemeTick();
+    _autoThemeTimer = setInterval(_autoThemeTick, 5 * 60 * 1000);
+  } else {
+    if (_autoThemeTimer) { clearInterval(_autoThemeTimer); _autoThemeTimer = null; }
+  }
+  const el = document.getElementById('set-autotheme');
+  if (el) el.checked = on;
+}
+function _startAutoTheme() {
+  if (!_autoThemeEnabled()) return;
+  _autoThemeTick();
+  _autoThemeTimer = setInterval(_autoThemeTick, 5 * 60 * 1000);
+}
+
+// ── Custom theme CRUD ─────────────────────────────────────────────────────
+function openCustomThemePanel(editId) {
+  const panel = document.getElementById('theme-custom-panel');
+  if (!panel) return;
+  panel.style.display = '';
+  const titleEl = document.getElementById('theme-custom-title');
+  const nameEl = document.getElementById('custom-theme-name');
+  const accentEl = document.getElementById('custom-accent');
+  const bgEl = document.getElementById('custom-bg');
+  const surfaceEl = document.getElementById('custom-surface');
+  const darkEl = document.getElementById('custom-isdark');
+  const saveBtn = document.getElementById('custom-theme-save');
+  const delBtn = document.getElementById('custom-theme-delete');
+  if (editId) {
+    const ct = _customThemes.find(t => t.id === editId);
+    if (!ct) return;
+    if (titleEl) titleEl.textContent = t('themes.editTheme');
+    if (nameEl) nameEl.value = ct.name;
+    if (accentEl) accentEl.value = ct.accent;
+    if (bgEl) bgEl.value = ct.bg;
+    if (surfaceEl) surfaceEl.value = ct.surface;
+    if (darkEl) darkEl.checked = ct.isDark;
+    if (delBtn) { delBtn.style.display = ''; delBtn.dataset.editId = editId; }
+    if (saveBtn) saveBtn.dataset.editId = editId;
+    previewTheme(ct.accent, ct.bg, ct.surface, ct.isDark);
+  } else {
+    if (titleEl) titleEl.textContent = t('themes.newTheme');
+    if (nameEl) nameEl.value = '';
+    if (accentEl) accentEl.value = '#5c5ce0';
+    if (bgEl) bgEl.value = '#0b0c0f';
+    if (surfaceEl) surfaceEl.value = '#141519';
+    if (darkEl) darkEl.checked = true;
+    if (delBtn) delBtn.style.display = 'none';
+    if (saveBtn) saveBtn.dataset.editId = '';
+    previewTheme('#5c5ce0', '#0b0c0f', '#141419', true);
+  }
+}
+function closeCustomThemePanel() {
+  const panel = document.getElementById('theme-custom-panel');
+  if (panel) panel.style.display = 'none';
+  clearPreview();
+}
+function onCustomColorChange() {
+  const a = document.getElementById('custom-accent')?.value || '#5c5ce0';
+  const b = document.getElementById('custom-bg')?.value || '#0b0c0f';
+  const s = document.getElementById('custom-surface')?.value || '#141519';
+  const d = document.getElementById('custom-isdark')?.checked || false;
+  const ah = document.getElementById('custom-accent-hex');
+  const bh = document.getElementById('custom-bg-hex');
+  const sh = document.getElementById('custom-surface-hex');
+  if (ah) ah.textContent = a;
+  if (bh) bh.textContent = b;
+  if (sh) sh.textContent = s;
+  previewTheme(a, b, s, d);
+}
+function saveCustomTheme() {
+  const nameEl = document.getElementById('custom-theme-name');
+  const accentEl = document.getElementById('custom-accent');
+  const bgEl = document.getElementById('custom-bg');
+  const surfaceEl = document.getElementById('custom-surface');
+  const darkEl = document.getElementById('custom-isdark');
+  const saveBtn = document.getElementById('custom-theme-save');
+  let name = (nameEl?.value || '').trim();
+  if (!name) { name = t('themes.newTheme'); }
+  const accent = accentEl?.value || '#5c5ce0';
+  const bg = bgEl?.value || '#0b0c0f';
+  const surface = surfaceEl?.value || '#141519';
+  const isDark = darkEl?.checked || false;
+  const editId = saveBtn?.dataset.editId || '';
+  name = _uniqueThemeName(name, editId);
+  if (editId) {
+    const ct = _customThemes.find(t => t.id === editId);
+    if (ct) { ct.name = name; ct.accent = accent; ct.bg = bg; ct.surface = surface; ct.isDark = isDark; }
+  } else {
+    _customThemes.push({ id: 'ct_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name, accent, bg, surface, isDark });
+  }
+  _saveCustomThemes();
+  setTheme('custom:' + _customThemes[_customThemes.length - 1].id);
+  closeCustomThemePanel();
+}
+function deleteCustomTheme(id) {
+  _customThemes = _customThemes.filter(t => t.id !== id);
+  _saveCustomThemes();
+  if (currentTheme() === 'custom:' + id) setTheme('dark');
+  closeCustomThemePanel();
+  renderThemePage();
+}
+
+// ── Import / Export ────────────────────────────────────────────────────────
+function exportTheme() {
+  const name = currentTheme();
+  let data;
+  if (name.startsWith('custom:')) {
+    data = _customThemes.find(t => t.id === name.slice(7));
+  } else {
+    // Export preset — use its CSS vars to guess colors
+    data = { name: name, accent: '#5c5ce0', bg: '#0b0c0f', surface: '#141519', isDark: name !== 'light' };
+  }
+  if (!data) { toast(t('themes.exportFailed'), 'err'); return; }
+  const json = JSON.stringify({ name: data.name, accent: data.accent, bg: data.bg, surface: data.surface, isDark: data.isDark }, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (data.name || 'theme') + '.json';
+  a.click(); URL.revokeObjectURL(url);
+  toast(t('themes.exported'), 'ok');
+}
+function importTheme() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data.accent || !data.bg || !data.surface) { toast(t('themes.importError'), 'err'); return; }
+        const name = _uniqueThemeName(data.name || t('themes.newTheme'), '');
+        const ct = { id: 'ct_' + Date.now() + '_' + Math.random().toString(36).slice(2,6), name, accent: data.accent, bg: data.bg, surface: data.surface, isDark: !!data.isDark };
+        _customThemes.push(ct);
+        _saveCustomThemes();
+        setTheme('custom:' + ct.id);
+        renderThemePage();
+        toast(t('themes.imported'), 'ok');
+      } catch { toast(t('themes.importError'), 'err'); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ── Theme page rendering ──────────────────────────────────────────────────
+const THEME_META = {
+  dark: { accent:'#5c5ce0', bg:'#0e0e10', surface:'#18181d', isDark:true },
+  light: { accent:'#5c5ce0', bg:'#f4f4f8', surface:'#ffffff', isDark:false },
+  midnight: { accent:'#4f7cff', bg:'#0a0e1a', surface:'#141a2e', isDark:true },
+  aurora: { accent:'#2dd4bf', bg:'#07140f', surface:'#11221b', isDark:true },
+  sunset: { accent:'#ff7a59', bg:'#170b12', surface:'#281320', isDark:true },
+  crimson: { accent:'#f43f5e', bg:'#160a0c', surface:'#271216', isDark:true },
+  ocean: { accent:'#38bdf8', bg:'#07121a', surface:'#0f2030', isDark:true },
+  grape: { accent:'#a855f7', bg:'#120a1c', surface:'#211333', isDark:true },
+  forest: { accent:'#4ade80', bg:'#0a1410', surface:'#13251c', isDark:true },
+  amber: { accent:'#f59e0b', bg:'#161106', surface:'#271e0d', isDark:true },
+  rose: { accent:'#fb7185', bg:'#170b11', surface:'#29131f', isDark:true },
+  graphite: { accent:'#94a3b8', bg:'#0d0e10', surface:'#1a1c21', isDark:true },
+};
+function _themeCardMiniHtml(accent, bg, surface, isDark) {
+  const text = isDark ? '#f0f0f5' : '#0e0e1a';
+  const dim = isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.14)';
+  const bd = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)';
+  return '<div class="tc-mini" style="--m-bg:'+bg+';--m-panel:'+surface+';--m-ac:'+accent+';--m-text:'+text+';--m-dim:'+dim+';--m-bd:'+bd+'"><span class="tcm-bg"></span><span class="tcm-side"><i></i><i class="on"></i><i></i><i></i></span><span class="tcm-card"><b></b><u></u><span class="tcm-btn"></span></span></div>';
+}
+function _swatchesHtml(accent, bg, surface) {
+  return '<span class="tc-sws"><span class="tc-sw" style="background:'+bg+'"></span><span class="tc-sw" style="background:'+surface+'"></span><span class="tc-sw" style="background:'+accent+'"></span></span>';
+}
+function renderThemePage() {
+  const grid = document.getElementById('themes-grid-inner');
+  if (!grid) return;
+  const active = currentTheme();
+  // Category tabs
+  const catBar = document.getElementById('theme-cat-bar');
+  if (catBar) {
+    catBar.querySelectorAll('.theme-cat-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.cat === _themeCat);
+    });
+  }
+  let html = '';
+  // Filter themes by category
+  const darkThemes = ['dark','midnight','aurora','sunset','crimson','ocean','grape','forest','amber','rose','graphite'];
+  const lightThemes = ['light'];
+  let visibleBuiltins = THEMES;
+  if (_themeCat === 'dark') visibleBuiltins = darkThemes;
+  else if (_themeCat === 'light') visibleBuiltins = lightThemes;
+  else if (_themeCat === 'custom') visibleBuiltins = [];
+  // Built-in themes
+  for (const name of visibleBuiltins) {
+    const m = THEME_META[name];
+    if (!m) continue;
+    html += '<div class="theme-card" data-theme="'+name+'" onclick="setTheme(\''+name+'\')" onmouseenter="previewTheme(\''+m.accent+'\',\''+m.bg+'\',\''+m.surface+'\','+m.isDark+')" onmouseleave="clearPreview()" role="button" tabindex="0">';
+    html += _themeCardMiniHtml(m.accent, m.bg, m.surface, m.isDark);
+    html += '<div class="tc-foot"><span class="tc-name"><span class="tc-check"><span class="material-icons-round">check</span></span>'+esc(t('settings.theme'+name.charAt(0).toUpperCase()+name.slice(1)))+'</span>';
+    html += _swatchesHtml(m.accent, m.bg, m.surface);
+    html += '</div></div>';
+  }
+  // Custom themes
+  if (_themeCat !== 'dark' && _themeCat !== 'light') {
+    for (const ct of _customThemes) {
+      html += '<div class="theme-card theme-custom-card" data-theme-id="'+ct.id+'" onclick="setTheme(\'custom:'+ct.id+'\')" onmouseenter="previewTheme(\''+ct.accent+'\',\''+ct.bg+'\',\''+ct.surface+'\','+ct.isDark+')" onmouseleave="clearPreview()" role="button" tabindex="0">';
+      html += _themeCardMiniHtml(ct.accent, ct.bg, ct.surface, ct.isDark);
+      html += '<div class="tc-foot"><span class="tc-name"><span class="tc-check"><span class="material-icons-round">check</span></span>'+esc(ct.name)+' <button class="btn btn-sm btn-ghost" style="margin-left:6px;padding:2px 6px;font-size:10px" onclick="event.stopPropagation();openCustomThemePanel(\''+ct.id+'\')"><span class="material-icons-round" style="font-size:12px">edit</span></button></span>';
+      html += _swatchesHtml(ct.accent, ct.bg, ct.surface);
+      html += '</div></div>';
+    }
+    // "New theme" card
+    html += '<div class="theme-card theme-card-add" onclick="openCustomThemePanel()" role="button" tabindex="0"><div class="theme-card-add-inner"><span class="material-icons-round">add</span><span>'+esc(t('themes.newTheme'))+'</span></div></div>';
+  }
+  grid.innerHTML = html;
+  // Restore scroll
+}
+function setThemeCat(cat) { _themeCat = cat; renderThemePage(); }
+
+// ── Theme init ────────────────────────────────────────────────────────────
 function openDiscord() {
   api.openExternal('https://discord.gg/6eNAcGKmpC');
 }
 (function() {
-  let t;
+  _loadCustomThemes();
+  let t0;
   try {
-    t = localStorage.getItem('ui-theme');
-    if (!t) { const old = localStorage.getItem('theme'); t = (old === 'light') ? 'light' : 'dark'; }
-  } catch { t = 'dark'; }
-  setTheme(t || 'dark');
+    t0 = localStorage.getItem('ui-theme');
+    if (!t0) { const old = localStorage.getItem('theme'); t0 = (old === 'light') ? 'light' : 'dark'; }
+  } catch { t0 = 'dark'; }
+  applyTheme(t0 || 'dark');
+  _applyBorderRadius();
+  _startAutoTheme();
+  document.body.classList.toggle('high-contrast', _highContrast());
 })();
 
 // ── BloxGen API key persistence ────────────────────────────────────────────
@@ -827,6 +1248,17 @@ function settingsTab(tab) {
   });
   if (tab === 'performance') renderEngineInit();
   if (tab === 'privacy') renderBackupHistory();
+  if (tab === 'themes') {
+    renderThemePage();
+    const radiusEl = document.getElementById('set-radius');
+    const radiusVal = document.getElementById('radius-val');
+    if (radiusEl) radiusEl.value = _savedRadius();
+    if (radiusVal) radiusVal.textContent = _savedRadius() + 'px';
+    const hcEl = document.getElementById('set-highcontrast');
+    if (hcEl) hcEl.checked = _highContrast();
+    const atEl = document.getElementById('set-autotheme');
+    if (atEl) atEl.checked = _autoThemeEnabled();
+  }
   refreshAllSliderFills();
   positionTabSlider(document.getElementById('stab-general')?.closest('.tab-bar'));
 }
@@ -908,7 +1340,8 @@ function showCardMenu(id, x, y) {
     <button class="ctx-item" onclick="ctxCopyId('${id}')"><span class="material-icons-round">tag</span>Copy user ID</button>
     <button class="ctx-item" onclick="ctxCopyUser('${id}')"><span class="material-icons-round">person</span>Copy username</button>
     <button class="ctx-item" onclick="ctxCopyCookie('${id}')"><span class="material-icons-round">cookie</span>Copy cookie</button>
-    ${a?.password ? `<button class="ctx-item" onclick="ctxCopyPassword('${id}')"><span class="material-icons-round">lock</span>Copy password</button>` : ''}
+    <button class="ctx-item" onclick="ctxCopyPassword('${id}')"><span class="material-icons-round">lock</span>Copy password</button>
+    <button class="ctx-item" onclick="ctxCopyCombo('${id}')"><span class="material-icons-round">content_copy</span>Copy combo</button>
     <button class="ctx-item" onclick="ctxOpenBrowser('${id}')"><span class="material-icons-round">open_in_browser</span>Open in browser</button>
   `;
   document.body.appendChild(menu);
@@ -1003,6 +1436,7 @@ function ctxCopyId(id) { closeCardMenu(); const a = accounts.find(x => x.id === 
 function ctxCopyUser(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.username) navigator.clipboard.writeText(a.username).then(() => toast(t('acct.copyUser'), 'ok')); else toast(t('acct.noUser'), 'err'); }
 function ctxCopyCookie(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.cookie) navigator.clipboard.writeText(a.cookie).then(() => toast(t('acct.copyCookie'), 'ok')); else toast(t('acct.noCookie'), 'err'); }
 function ctxCopyPassword(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.password) navigator.clipboard.writeText(a.password).then(() => toast(t('acct.copyPassword'), 'ok')); else toast(t('acct.noPassword'), 'err'); }
+function ctxCopyCombo(id) { closeCardMenu(); const a = accounts.find(x => x.id === id); if (a?.username && a?.password) navigator.clipboard.writeText(a.username + ':' + a.password).then(() => toast(t('acct.copyCombo'), 'ok')); else toast(t('acct.noCombo'), 'err'); }
 async function ctxOpenBrowser(id) {
   closeCardMenu();
   const a = accounts.find(x => x.id === id);

@@ -225,7 +225,8 @@ pub async fn open_login(app: &AppHandle, state: &AppState) -> LoginResult {
     {
         let closed2 = closed.clone();
         window.on_window_event(move |event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
                 closed2.store(true, std::sync::atomic::Ordering::SeqCst);
             }
         });
@@ -280,7 +281,7 @@ pub async fn open_login(app: &AppHandle, state: &AppState) -> LoginResult {
 
     // Not clearing state.login_cancel here -- if a newer open_login call
     // already cancelled and replaced it, doing so would rip out its sender.
-    let _ = window.close();
+    let _ = window.destroy();
     result
 }
 
