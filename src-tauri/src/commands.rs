@@ -496,17 +496,31 @@ pub async fn roblox_kill_one(
         .unwrap_or(&id)
         .to_string();
     let user_id = acct.get("userId").and_then(|v| v.as_str());
-    let pid = state.account_pids.lock().unwrap().get(&id).copied();
+    // Log the attempt BEFORE the kill so the user sees it immediately.
     crate::native::emit_log(
         &app,
         "warn",
         "kill",
-        &format!("Killed Roblox instance for {}", username),
+        &format!("Killing Roblox instance for {}...", username),
         Some(
-            serde_json::json!({ "accountId": id, "username": username, "userId": user_id, "pid": pid }),
+            serde_json::json!({ "accountId": id, "username": username, "userId": user_id }),
         ),
     );
-    Ok(crate::native::kill_account_roblox(&app, &state, &id).await)
+    let result = crate::native::kill_account_roblox(&app, &state, &id).await;
+    // Log the outcome AFTER the kill.
+    let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    crate::native::emit_log(
+        &app,
+        if ok { "ok" } else { "err" },
+        "kill",
+        &format!(
+            "{} for {}",
+            if ok { "Killed" } else { "Kill failed" },
+            username
+        ),
+        Some(serde_json::json!({ "accountId": id, "username": username, "userId": user_id })),
+    );
+    Ok(result)
 }
 
 #[tauri::command]

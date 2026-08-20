@@ -916,6 +916,8 @@ function applySettings() {
   }
   const relaunch = document.getElementById('set-autorelaunch');
   if (relaunch) relaunch.checked = !!settings.autoRelaunch;
+  const killOnClose = document.getElementById('set-killonclose');
+  if (killOnClose) killOnClose.checked = !!settings.killOnClose;
   const lowPriority = document.getElementById('set-lowpriority');
   if (lowPriority) lowPriority.checked = settings.lowPriorityMultiInstance !== false;
   const lockChannel = document.getElementById('set-lockchannel');
@@ -1063,6 +1065,13 @@ function toggleAutoRelaunch() {
   settings.autoRelaunch = on;
   api.saveSettings({ autoRelaunch: on });
   toast(on ? 'Relaunch on disconnect on' : 'Relaunch on disconnect off', on ? 'ok' : 'err');
+}
+function toggleKillOnClose() {
+  const el = document.getElementById('set-killonclose');
+  const on = el.checked;
+  settings.killOnClose = on;
+  api.saveSettings({ killOnClose: on });
+  toast(on ? t('settings.killOnCloseOn') : t('settings.killOnCloseOff'), 'ok');
 }
 // Releasing/re-acquiring the mutex happens inside the helper and isn't
 // instant, so re-read the real state afterwards instead of assuming the badge

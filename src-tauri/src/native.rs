@@ -212,6 +212,32 @@ static PLACE_ID_ANY_RE: once_cell::sync::Lazy<regex::Regex> =
 // the whole session (see helper.rs / MutexHolder in RobloxNative.cs). Nothing
 // here spawns or kills a process any more -- these just tell the daemon which
 // state to be in, and block until it has actually applied it.
+/// Logs any RobloxPlayerBeta.exe processes that are already running when
+/// MultiRoblox starts. These are orphans from a previous session or launched
+/// outside the app. Useful for diagnosing "random Roblox windows" reports.
+pub async fn log_startup_roblox_state(app: &AppHandle, state: &AppState) {
+    if !cfg!(windows) {
+        return;
+    }
+    if let Some(alive) = native_pids(app, state).await {
+        let count = alive.len();
+        if count > 0 {
+            let pids_str: Vec<String> = alive.iter().map(|p| p.to_string()).collect();
+            emit_log(
+                app,
+                "warn",
+                "system",
+                &format!(
+                    "Found {} RobloxPlayerBeta.exe process(es) already running at startup (PIDs: {})",
+                    count,
+                    pids_str.join(", ")
+                ),
+                Some(serde_json::json!({ "pids": pids_str.join(", "), "count": count })),
+            );
+        }
+    }
+}
+
 pub async fn start_mutex_holder(app: &AppHandle, state: &AppState) {
     if crate::helper::ensure(app, state).await.is_none() {
         eprintln!("[mutex] native helper unavailable");
@@ -695,40 +721,96 @@ pub async fn kill_all_roblox(app: &AppHandle, state: &AppState) -> Value {
     hide_window(&mut cmd);
     cmd.kill_on_drop(true);
 
-    let result = tokio::time::timeout(Duration::from_secs(6), cmd.output()).await;
+    let _result = tokio::time::timeout(Duration::from_secs(6), cmd.output()).await;
     wait_for_pids_closed(app, state, &pids, Duration::from_secs(5)).await;
+
+    // Verify which PIDs actually died. taskkill can silently fail (AV
+    // interception, stale PID race) and the caller needs an accurate count.
+    let still_alive: Vec<u32> = if let Some(alive) = cached_or_spawn_pids(app, state).await {
+        pids.iter().filter(|p| alive.contains(p)).copied().collect()
+    } else {
+        vec![] // couldn't enumerate -- assume all dead
+    };
+    let confirmed_killed = pids.len() - still_alive.len();
+
     restart_mutex_holder(app, state).await;
     notify(app, &watched_ids);
-    let _ = result;
-    serde_json::json!({ "ok": true, "killed": pids.len(), "untracked": untracked })
+    serde_json::json!({ "ok": true, "killed": confirmed_killed, "total": pids.len(), "untracked": untracked })
 }
 
 pub async fn kill_account_roblox(app: &AppHandle, state: &AppState, account_id: &str) -> Value {
-    let pid = state.account_pids.lock().unwrap().remove(account_id);
-    state.watched_accounts.lock().unwrap().remove(account_id);
-    state.miss_counts.lock().unwrap().remove(account_id);
-    clear_manual_priority(state, account_id);
-    stop_watch_poll_if_idle(state);
+    // Read PID without removing it yet -- we need it for the kill, and only
+    // clean up tracking after confirming the process is actually gone.
+    let pid = state.account_pids.lock().unwrap().get(account_id).copied();
 
-    let notify = |app: &AppHandle| {
-        let _ = app.emit("roblox:closed", account_id);
+    let notify_and_cleanup = |app: &AppHandle, success: bool| {
+        state.watched_accounts.lock().unwrap().remove(account_id);
+        state.miss_counts.lock().unwrap().remove(account_id);
+        state.account_pids.lock().unwrap().remove(account_id);
+        clear_manual_priority(state, account_id);
+        stop_watch_poll_if_idle(state);
+        if success {
+            let _ = app.emit("roblox:closed", account_id);
+        }
     };
 
     if !cfg!(windows) {
-        notify(app);
+        notify_and_cleanup(app, false);
         return serde_json::json!({ "ok": false, "error": "Windows only" });
     }
     let Some(pid) = pid else {
-        notify(app);
+        notify_and_cleanup(app, false);
         return serde_json::json!({ "ok": false, "error": "No tracked process for this account" });
     };
-    let mut cmd = Command::new("cmd");
-    cmd.args(["/c", &format!("taskkill /F /PID {} /T", pid)]);
-    hide_window(&mut cmd);
-    let _ = tokio::time::timeout(Duration::from_secs(4), cmd.output()).await;
-    notify(app);
+
+    // Try taskkill up to 2 times. The first attempt is the normal path;
+    // the second handles the case where the PID briefly survives /F (e.g.
+    // kernel-mode thread, AV intercepting the terminate request).
+    let mut killed = false;
+    for attempt in 0..2 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", &format!("taskkill /F /PID {} /T", pid)]);
+        hide_window(&mut cmd);
+        match tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // taskkill returns exit code 0 when at least one process was terminated.
+                killed = output.status.success()
+                    || stdout.contains("SUCCESS")
+                    || stdout.contains("not found"); // already dead is fine
+            }
+            Ok(Err(_)) => {}
+            Err(_) => {} // timeout -- process may still die asynchronously
+        }
+        if killed {
+            // Brief pause to let the OS finalize teardown, then confirm.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if let Some(alive) = cached_or_spawn_pids(app, state).await {
+                if !alive.contains(&pid) {
+                    break; // confirmed dead
+                }
+            }
+            // Process may still be alive -- retry once, then give up.
+            killed = false;
+        }
+    }
+
+    // Emit the close event before cleanup so the UI updates immediately.
+    let _ = app.emit("roblox:closed", account_id);
+    notify_and_cleanup(app, true);
     apply_priority_policy(state, &crate::settings::load_settings()).await;
-    serde_json::json!({ "ok": true })
+
+    if killed {
+        serde_json::json!({ "ok": true })
+    } else {
+        // taskkill may still succeed asynchronously (the process tears down
+        // after the timeout), so report success anyway but let the caller
+        // know it wasn't a clean kill.
+        serde_json::json!({ "ok": true, "pending": true })
+    }
 }
 
 // Runs before every launch. Used to spawn (and then have to reap) a fresh

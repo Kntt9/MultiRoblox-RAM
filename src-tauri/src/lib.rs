@@ -71,6 +71,8 @@ pub fn run() {
                     .unwrap_or(true);
                 tauri::async_runtime::spawn(async move {
                     let state = handle2.state::<AppState>();
+                    // Log any Roblox processes already running when we start.
+                    native::log_startup_roblox_state(&handle2, &state).await;
                     native::start_mutex_holder(&handle2, &state).await;
                     if !multi_instance {
                         native::set_multi_instance(&handle2, &state, false).await;
@@ -182,13 +184,32 @@ pub fn run() {
                     }
                 }
                 tauri::RunEvent::Exit => {
+                    // Kill tracked Roblox instances if the user enabled
+                    // "Kill Roblox on exit". This prevents orphaned processes
+                    // from causing random windows on the next startup.
+                    {
+                        let state = app_handle.state::<AppState>();
+                        let kill_on_close = settings::load_settings()
+                            .get("killOnClose")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        if kill_on_close {
+                            let pids: Vec<u32> = state.account_pids.lock().unwrap().values().copied().collect();
+                            if !pids.is_empty() {
+                                let mut args = String::from("taskkill /F /T");
+                                for pid in &pids {
+                                    args.push_str(&format!(" /PID {}", pid));
+                                }
+                                let _ = std::process::Command::new("cmd")
+                                    .args(["/c", &args])
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::null())
+                                    .spawn();
+                            }
+                        }
+                    }
                     // Take the helper down with us. Synchronous on purpose:
-                    // there's no runtime left to await on here, and deferring
-                    // into a spawn would race the process actually exiting.
-                    // Even if this somehow doesn't land, closing our end of
-                    // its stdin gives the daemon EOF and it exits itself --
-                    // which is also what covers a crash or a Task Manager
-                    // kill, where none of this code runs at all.
+                    // there's no runtime left to await on here.
                     let state = app_handle.state::<AppState>();
                     helper::shutdown_blocking(&state);
                 }
