@@ -1,10 +1,38 @@
-let accounts = [], launchAcc = null, editAcc = null, toastTimer;
-let packages = [], editingPackageId = null;
-// Soft-deleted accounts live here until restored or purged (see Trash UI).
-let trashedAccounts = [];
-// Account categories, persisted inside settings.json as [{id, name}].
-let categories = [];
-const _launchedIds = new Set();
+/**
+ * @typedef {Object} Account
+ * @property {string} id
+ * @property {string} username
+ * @property {string} [nickname]
+ * @property {string} [userId]
+ * @property {string} [cookie]
+ * @property {string} [password]
+ * @property {string} [gameTarget]
+ * @property {string} [description]
+ * @property {string} [categoryId]
+ * @property {boolean} [trashed]
+ * @property {boolean} [_cookieInvalid]
+ */
+
+/**
+ * @typedef {Object} Package
+ * @property {string} id
+ * @property {string} name
+ * @property {string[]} [accountIds]
+ * @property {string} [link]
+ */
+
+/**
+ * @typedef {Object} Category
+ * @property {string} id
+ * @property {string} name
+ * @property {string} [color]
+ */
+
+/** @type {Account[]} */ let accounts = [], launchAcc = null, editAcc = null, toastTimer;
+/** @type {Package[]} */ let packages = [], editingPackageId = null;
+/** @type {Account[]} */ let trashedAccounts = [];
+/** @type {Category[]} */ let categories = [];
+/** @type {Set<string>} */ const _launchedIds = new Set();
 
 // ── i18n ────────────────────────────────────────────────────────────────────
 // Language dictionaries live in i18n/en.js and i18n/pt.js (window.I18N).
@@ -16,6 +44,12 @@ const LANG_META = {
 };
 let _lang = 'en';
 
+/**
+ * Translate a key using the current language dictionary.
+ * @param {string} key
+ * @param {Object} [vars]
+ * @returns {string}
+ */
 function t(key, vars) {
   const I = window.I18N || {};
   let s = (I[_lang] && I[_lang][key]) != null ? I[_lang][key]
@@ -30,9 +64,9 @@ function t(key, vars) {
   return s;
 }
 
-// Applies translations to the static tree ([data-i18n*] attributes). Dynamic
-// parts are re-rendered by the callers (render(), renderPackages(), ...) with
-// t() baked into their templates.
+/**
+ * Apply translations to static DOM elements with data-i18n attributes.
+ */
 function applyI18n() {
   document.documentElement.lang = _lang;
   document.title = t('app.name');
@@ -1272,6 +1306,10 @@ function settingsTab(tab) {
   positionTabSlider(document.getElementById('stab-general')?.closest('.tab-bar'));
 }
 
+/**
+ * Navigate to a page by id (e.g. 'dashboard', 'accounts').
+ * @param {string} p
+ */
 function goTo(p) {
   if (p === 'themes') { goTo('settings'); settingsTab(p); return; }
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
@@ -2206,6 +2244,11 @@ async function refreshEditFromRoblox() {
   }
 }
 
+/**
+ * Show a confirmation modal and run onConfirm if the user accepts.
+ * @param {string} message
+ * @param {Function} onConfirm
+ */
 function confirmAction(message, onConfirm) {
   document.getElementById('m-confirm-delete-msg').textContent = message;
   const btn = document.getElementById('m-confirm-delete-btn');
@@ -3110,10 +3153,34 @@ async function saveKeySettings() {
   }, 300);
 }
 
+/**
+ * Open a modal by element id.
+ * @param {string} id
+ */
 function openModal(id) { document.getElementById(id).classList.add('open'); }
+/**
+ * Close a modal by element id.
+ * @param {string} id
+ */
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+/**
+ * Update a status element's class and innerHTML.
+ * @param {string} id
+ * @param {string} type
+ * @param {string} html
+ */
 function setStatus(id, type, html) { const el = document.getElementById(id); el.className = 'mst ' + type; el.innerHTML = html; }
+/**
+ * Escape HTML special characters.
+ * @param {string} s
+ * @returns {string}
+ */
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+/**
+ * Show a toast notification.
+ * @param {string} msg
+ * @param {'ok'|'err'|''} type
+ */
 function toast(msg, type) {
   type = type || '';
   const el = document.getElementById('toast'), icon = type === 'ok' ? 'check_circle' : 'cancel';
@@ -3530,6 +3597,57 @@ function startStatusPoll() {
   if (_statusPoll) return;
   pollStatus();
   _statusPoll = setInterval(pollStatus, 3000);
+}
+
+// ── Sync instances ────────────────────────────────────────────────────────
+// Asks the backend to reconcile in-memory tracking with the actual set of
+// running RobloxPlayerBeta.exe processes, then pulls the updated state.
+// Used by the Reload buttons on Dashboard and Accounts, and can be called
+// from any page. Spins while the backend is working (the button shows
+// "Syncing…" and is disabled), then triggers the same polling path the
+// normal status poll uses.
+let _syncInFlight = false;
+async function syncInstances(src) {
+  if (_syncInFlight) return;
+  _syncInFlight = true;
+  // Determine which button to spin, based on where the call came from.
+  const btnDash = document.getElementById('dash-sync-btn');
+  const btnAcct = document.getElementById('acct-sync-btn');
+  const btn = (src === 'dash') ? btnDash : btnAcct;
+  const btns = [btnDash, btnAcct].filter(Boolean);
+  const origLabels = btns.map(b => {
+    const span = b.querySelector('[data-i18n]');
+    return span ? span.textContent : '';
+  });
+  btns.forEach((b, i) => {
+    b.disabled = true;
+    const span = b.querySelector('[data-i18n]');
+    if (span) span.textContent = t('common.syncing');
+    b.style.opacity = '0.6';
+    b.style.pointerEvents = 'none';
+  });
+  try {
+    await api.syncInstances();
+    // Give the backend a brief moment to settle, then pull the updated state.
+    // The backend's sync function already emits roblox:count, but we also
+    // pull directly to cover the full card state.
+    await pollRunningCount();
+    await pollWatchedIds();
+    renderDashboard();
+    render();
+    logEntry('info', 'system', 'Instances synced with reality');
+  } catch (e) {
+    logEntry('warn', 'system', `Sync failed: ${e}`);
+  } finally {
+    btns.forEach((b, i) => {
+      b.disabled = false;
+      const span = b.querySelector('[data-i18n]');
+      if (span && origLabels[i]) span.textContent = origLabels[i];
+      b.style.opacity = '';
+      b.style.pointerEvents = '';
+    });
+    _syncInFlight = false;
+  }
 }
 
 async function mixRefreshRunning() {

@@ -73,6 +73,16 @@ pub fn run() {
                     let state = handle2.state::<AppState>();
                     // Log any Roblox processes already running when we start.
                     native::log_startup_roblox_state(&handle2, &state).await;
+                    // Sync tracking state with reality: this detects Roblox
+                    // instances that were left running when the app was closed,
+                    // so the dashboard and accounts tabs show the correct
+                    // Running count immediately after startup. Takes the same
+                    // lock the Reload command uses, so an early click can't
+                    // race this first pass.
+                    {
+                        let _guard = state.sync_lock.lock().await;
+                        native::sync_running_instances(&handle2, &state).await.ok();
+                    }
                     native::start_mutex_holder(&handle2, &state).await;
                     if !multi_instance {
                         native::set_multi_instance(&handle2, &state, false).await;
@@ -142,6 +152,7 @@ pub fn run() {
             commands::roblox_kill_one,
             commands::roblox_running_count,
             commands::roblox_watched_ids,
+            commands::roblox_sync_instances,
             commands::roblox_trim_memory,
             commands::roblox_trim_account_memory,
             commands::roblox_set_account_priority,
@@ -206,6 +217,10 @@ pub fn run() {
                                     .stderr(std::process::Stdio::null())
                                     .spawn();
                             }
+                            // Nothing survives this exit, so drop the mirror
+                            // too -- otherwise the next start would try to
+                            // reattach PIDs we just killed.
+                            native::clear_persisted_instances(&state);
                         }
                     }
                     // Take the helper down with us. Synchronous on purpose:

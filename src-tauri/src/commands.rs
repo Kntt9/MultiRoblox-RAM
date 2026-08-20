@@ -529,15 +529,29 @@ pub async fn roblox_running_count(app: AppHandle, state: State<'_, AppState>) ->
 }
 
 // Polled by the frontend to self-heal card state if a push event is missed.
+// Derived from the same definition the running badge uses
+// (native::running_account_ids), so a card can never say Running while the
+// counter disagrees.
 #[tauri::command]
-pub async fn roblox_watched_ids(state: State<'_, AppState>) -> Result<Vec<String>, ()> {
-    Ok(state
-        .watched_accounts
-        .lock()
-        .unwrap()
-        .keys()
-        .cloned()
-        .collect())
+pub async fn roblox_watched_ids(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, ()> {
+    Ok(crate::native::running_ids(&app, &state).await)
+}
+
+// ---- sync instances ----
+// Single source of truth for detecting which Roblox instances are actually
+// running. Called on startup recovery, manual Reload buttons, and after
+// individual or bulk kills to reconcile in-memory tracking with reality.
+#[tauri::command]
+pub async fn roblox_sync_instances(app: AppHandle, state: State<'_, AppState>) -> Result<u32, ()> {
+    // Serialized rather than rejected: a second Reload (or one landing on top
+    // of the startup sync) waits for the pass in flight and then runs its own,
+    // so every caller gets an answer that reflects the machine as of after its
+    // own click -- without two passes racing over the same maps.
+    let _guard = state.sync_lock.lock().await;
+    crate::native::sync_running_instances(&app, &state).await
 }
 
 #[tauri::command]

@@ -301,6 +301,7 @@ pub fn reset_state_for_wipe(state: &AppState) {
     state.csrf_cache.lock().unwrap().clear();
     state.ticket_cache.lock().unwrap().clear();
     *state.last_launch_ts.lock().unwrap() = 0;
+    clear_persisted_instances(state);
 }
 
 // ---- anti-AFK ----
@@ -449,18 +450,41 @@ pub async fn set_roblox_volume(app: &AppHandle, state: &AppState, percent: f64) 
     }
 }
 
-// Instances this app launched and can still see, which is exactly the set
-// Kill acts on. Counting every RobloxPlayerBeta.exe on the machine would
-// report windows the user opened themselves -- and then Kill would leave them
-// running, so the badge and the button would disagree.
+// The accounts this app currently considers Running, derived from real
+// process state. Deliberately the *only* definition: the badge count and the
+// list the accounts grid reconciles against both come from here, so the two
+// can never drift apart.
+//
+// An account is running when the PID attributed to it is alive. Instances the
+// user started outside MultiRoblox are never included -- Kill can't act on
+// them, so counting them would make the badge and the button disagree.
+// Accounts launched through the OS URI handler sometimes never get a PID
+// attributed at all; those fall back to the same coarse "is any Roblox
+// running" signal watch_tick uses for them, and only while still watched.
+pub fn running_account_ids(state: &AppState, alive: &std::collections::HashSet<u32>) -> Vec<String> {
+    // watched before pids everywhere these two are held together, so no two
+    // call sites can take them in opposite orders and deadlock.
+    let watched = state.watched_accounts.lock().unwrap();
+    let pids = state.account_pids.lock().unwrap();
+    let mut ids: Vec<String> = pids
+        .iter()
+        .filter(|(_, pid)| alive.contains(pid))
+        .map(|(id, _)| id.clone())
+        .collect();
+    if !alive.is_empty() {
+        for id in watched.keys() {
+            if !pids.contains_key(id) {
+                ids.push(id.clone());
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
 fn owned_running_count(state: &AppState, alive: &std::collections::HashSet<u32>) -> u32 {
-    state
-        .account_pids
-        .lock()
-        .unwrap()
-        .values()
-        .filter(|pid| alive.contains(pid))
-        .count() as u32
+    running_account_ids(state, alive).len() as u32
 }
 
 pub async fn count_roblox_processes(app: &AppHandle, state: &AppState) -> u32 {
@@ -468,6 +492,317 @@ pub async fn count_roblox_processes(app: &AppHandle, state: &AppState) -> u32 {
         Some(alive) => owned_running_count(state, &alive),
         None => 0,
     }
+}
+
+/// The Running set the accounts grid reconciles against. Reads the same PID
+/// snapshot count_roblox_processes does, so a poll of both in the same tick
+/// can't return a list and a count that disagree.
+pub async fn running_ids(app: &AppHandle, state: &AppState) -> Vec<String> {
+    match cached_or_spawn_pids(app, state).await {
+        Some(alive) => running_account_ids(state, &alive),
+        // Couldn't read the process list this time. Answering "nothing is
+        // running" would blank every card over a transient helper hiccup, so
+        // hand back the last known tracking state and let the next poll (or
+        // the watch tick) correct it.
+        None => {
+            let mut ids: Vec<String> = state
+                .watched_accounts
+                .lock()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect();
+            ids.sort();
+            ids
+        }
+    }
+}
+
+// ---- instance mirror (instances.json) ----
+// account_pids only ever lived in memory, so closing MultiRoblox with clients
+// still open threw away the only record of which process belonged to which
+// account -- the next start saw N running RobloxPlayerBeta.exe and no way to
+// attribute any of them, and reported 0 running. Mirroring the map to disk is
+// what makes startup recovery possible.
+
+/// The process's own creation timestamp (FILETIME ticks). Windows recycles
+/// PIDs aggressively, so this is what proves a PID found at startup is the
+/// same process we launched rather than a stranger that inherited the number.
+#[cfg(windows)]
+fn process_start_time(pid: u32) -> Option<u64> {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return None;
+        };
+        let mut created = FILETIME::default();
+        let mut exited = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        let ok =
+            GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user).is_ok();
+        let _ = CloseHandle(handle);
+        if !ok {
+            return None;
+        }
+        Some(((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64)
+    }
+}
+#[cfg(not(windows))]
+fn process_start_time(_pid: u32) -> Option<u64> {
+    None
+}
+
+/// Returns the exit code of a terminated process, or `None` if the handle
+/// can't be opened or the call fails. A return value of `Some(0)` means
+/// the process exited cleanly (typical for a user-initiated window close);
+/// any other code (including `Some(259)` / STILL_ACTIVE if the PID was
+/// reused) signals an abnormal termination.
+#[cfg(windows)]
+fn process_exit_code(pid: u32) -> Option<u32> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return None;
+        };
+        let mut code = 0u32;
+        let ok = GetExitCodeProcess(handle, &mut code).is_ok();
+        let _ = CloseHandle(handle);
+        if ok { Some(code) } else { None }
+    }
+}
+#[cfg(not(windows))]
+fn process_exit_code(_pid: u32) -> Option<u32> {
+    None
+}
+
+fn load_persisted_instances() -> Vec<(String, u32, Option<u64>)> {
+    crate::jsonfile::read_array(&crate::paths::instances_path())
+        .into_iter()
+        .filter_map(|e| {
+            let id = e.get("accountId")?.as_str()?.to_string();
+            let pid = u32::try_from(e.get("pid")?.as_u64()?).ok()?;
+            let start = e.get("startTime").and_then(|v| v.as_u64());
+            Some((id, pid, start))
+        })
+        .collect()
+}
+
+/// Writes the current account -> PID map out. Cheap to call from anywhere
+/// that touches account_pids (including the once-a-second watch tick): the
+/// file is only rewritten when the map actually changed.
+pub fn persist_instances(state: &AppState) {
+    let mut snapshot: Vec<(String, u32)> = state
+        .account_pids
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(id, pid)| (id.clone(), *pid))
+        .collect();
+    snapshot.sort();
+    {
+        let mut last = state.persisted_instances.lock().unwrap();
+        if last.as_ref() == Some(&snapshot) {
+            return;
+        }
+        *last = Some(snapshot.clone());
+    }
+    let entries: Vec<Value> = snapshot
+        .iter()
+        .map(|(id, pid)| {
+            serde_json::json!({
+                "accountId": id,
+                "pid": pid,
+                "startTime": process_start_time(*pid),
+            })
+        })
+        .collect();
+    let path = crate::paths::instances_path();
+    let body = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string());
+    if let Err(e) = crate::jsonfile::write_atomic(&path, &body) {
+        eprintln!("[instances] could not write {}: {}", path.display(), e);
+    }
+}
+
+/// Drops the mirror entirely (app-data wipe, or a deliberate kill-everything
+/// on exit) so the next start has nothing stale to restore.
+pub fn clear_persisted_instances(state: &AppState) {
+    *state.persisted_instances.lock().unwrap() = None;
+    let _ = std::fs::remove_file(crate::paths::instances_path());
+}
+
+/// Reconciles in-memory tracking with the processes that actually exist, and
+/// is the single path every consumer goes through: startup recovery, the
+/// Reload buttons on the dashboard and the accounts tab, and the kill paths.
+///
+/// Idempotent. Running it twice in a row produces the same state, and it only
+/// ever emits events for accounts whose Running/Stopped status really changed.
+pub async fn sync_running_instances(app: &AppHandle, state: &AppState) -> Result<u32, ()> {
+    if !cfg!(windows) {
+        return Ok(0);
+    }
+
+    // Deliberately the helper's live answer rather than watch_pid_cache: a
+    // manual Reload has to reflect the machine right now, and the cache is
+    // empty entirely whenever nothing is being watched (which is exactly the
+    // state a fresh start is in).
+    let Some(alive_pids) = native_pids(app, state).await else {
+        // Can't enumerate. Reporting "nothing is running" here would tear
+        // down tracking for instances that are perfectly alive, so refuse
+        // instead and let the caller surface the failure.
+        eprintln!("[sync] could not enumerate Roblox processes");
+        return Err(());
+    };
+
+    let now = now_ms();
+    let before: std::collections::HashSet<String> =
+        running_account_ids(state, &alive_pids).into_iter().collect();
+
+    let tracked: Vec<(String, u32)> = state
+        .account_pids
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(id, pid)| (id.clone(), *pid))
+        .collect();
+    let watched: Vec<(String, i64)> = state
+        .watched_accounts
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(id, ready)| (id.clone(), *ready))
+        .collect();
+    let had_pid: std::collections::HashSet<&str> =
+        tracked.iter().map(|(id, _)| id.as_str()).collect();
+
+    // Survivors: accounts whose tracked PID is still alive. claimed doubles as
+    // the duplicate guard -- two accounts pointing at one PID is always a
+    // bookkeeping bug (a bad adoption), and only the first keeps it.
+    let mut claimed: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut survivors: Vec<(String, u32)> = Vec::new();
+    for (id, pid) in &tracked {
+        if alive_pids.contains(pid) && claimed.insert(*pid) {
+            survivors.push((id.clone(), *pid));
+        }
+    }
+
+    // Re-attach instances a previous session left running. Only PIDs that are
+    // currently a RobloxPlayerBeta.exe *and* whose process creation timestamp
+    // still matches what we recorded -- that pair is what keeps a recycled PID
+    // from being attributed to the wrong account.
+    let mut restored: Vec<(String, u32)> = Vec::new();
+    for (id, pid, start) in load_persisted_instances() {
+        if claimed_by(&survivors, &id) || !alive_pids.contains(&pid) || claimed.contains(&pid) {
+            continue;
+        }
+        if let Some(recorded) = start {
+            if process_start_time(pid) != Some(recorded) {
+                continue;
+            }
+        }
+        claimed.insert(pid);
+        survivors.push((id.clone(), pid));
+        restored.push((id, pid));
+    }
+
+    // Accounts launched through the URI handler can be watched without ever
+    // having had a PID attributed. Give them an unclaimed process if one is
+    // going spare; otherwise keep them only while their launch grace window
+    // is still open. An account whose *own* PID just died is not eligible --
+    // adopting a stranger for it is precisely what used to leave a closed
+    // account stuck on Running forever.
+    let mut orphans: Vec<u32> = alive_pids
+        .iter()
+        .filter(|p| !claimed.contains(p))
+        .copied()
+        .collect();
+    orphans.sort_unstable();
+    let mut adopted: Vec<(String, u32)> = Vec::new();
+    let mut pidless: Vec<String> = Vec::new();
+    for (id, ready_at) in &watched {
+        if claimed_by(&survivors, id) || had_pid.contains(id.as_str()) {
+            continue;
+        }
+        if let Some(pid) = orphans.pop() {
+            claimed.insert(pid);
+            survivors.push((id.clone(), pid));
+            adopted.push((id.clone(), pid));
+        } else if now < *ready_at {
+            pidless.push(id.clone());
+        }
+    }
+
+    // Single write-back, so nothing observes a half-updated map.
+    {
+        let mut watched_map = state.watched_accounts.lock().unwrap();
+        let mut pid_map = state.account_pids.lock().unwrap();
+        let mut misses = state.miss_counts.lock().unwrap();
+        pid_map.clear();
+        misses.clear();
+        let previous: std::collections::HashMap<String, i64> = watched_map.drain().collect();
+        for (id, pid) in &survivors {
+            pid_map.insert(id.clone(), *pid);
+            // A launch still inside its grace window keeps that deadline; an
+            // instance we just proved is up can be watched immediately.
+            watched_map.insert(id.clone(), previous.get(id).copied().unwrap_or(now));
+            misses.insert(id.clone(), 0);
+        }
+        for id in &pidless {
+            watched_map.insert(id.clone(), previous.get(id).copied().unwrap_or(now));
+            misses.insert(id.clone(), 0);
+        }
+    }
+
+    let after: std::collections::HashSet<String> =
+        running_account_ids(state, &alive_pids).into_iter().collect();
+    for id in before.difference(&after) {
+        clear_manual_priority(state, id);
+        let _ = app.emit("roblox:closed", id);
+    }
+
+    persist_instances(state);
+
+    for (id, pid) in &restored {
+        emit_log(
+            app,
+            "info",
+            "sync",
+            &format!("Reattached a Roblox instance left running for account {} (PID {})", id, pid),
+            Some(serde_json::json!({ "accountId": id, "pid": pid })),
+        );
+    }
+    for (id, pid) in &adopted {
+        emit_log(
+            app,
+            "info",
+            "sync",
+            &format!("Attributed unclaimed PID {} to account {}", pid, id),
+            Some(serde_json::json!({ "accountId": id, "pid": pid })),
+        );
+    }
+
+    let running_count = after.len() as u32;
+    let _ = app.emit("roblox:count", running_count);
+
+    if state.watched_accounts.lock().unwrap().is_empty() {
+        stop_watch_poll_if_idle(state);
+    } else {
+        start_watch_poll(app, app.clone());
+        ensure_pid_watcher(app, state).await;
+    }
+    apply_priority_policy(state, &crate::settings::load_settings()).await;
+
+    Ok(running_count)
+}
+
+fn claimed_by(survivors: &[(String, u32)], account_id: &str) -> bool {
+    survivors.iter().any(|(id, _)| id == account_id)
 }
 
 // Just hands idle physical pages back to the OS -- doesn't touch the
@@ -692,6 +1027,7 @@ pub async fn kill_all_roblox(app: &AppHandle, state: &AppState) -> Value {
     state.account_pids.lock().unwrap().clear();
     state.manual_priority.lock().unwrap().clear();
     stop_watch_poll_if_idle(state);
+    persist_instances(state);
 
     let notify = |app: &AppHandle, ids: &[String]| {
         for id in ids {
@@ -749,6 +1085,7 @@ pub async fn kill_account_roblox(app: &AppHandle, state: &AppState, account_id: 
         state.account_pids.lock().unwrap().remove(account_id);
         clear_manual_priority(state, account_id);
         stop_watch_poll_if_idle(state);
+        persist_instances(state);
         if success {
             let _ = app.emit("roblox:closed", account_id);
         }
@@ -1139,16 +1476,18 @@ async fn watch_tick(app: &AppHandle) {
             Some(p) => alive_pids.contains(&p),
             None => any_running,
         };
-        // Adopt an unclaimed PID whenever we don't have one at all (not just
-        // when a previously-tracked one died). do_launch's own post-fallback
-        // poll (wait_for_new_roblox_pid) is now the primary way a
-        // URI-handler-launched account gets attributed a real PID right
-        // away; this is just the secondary net for the rare case where
-        // Roblox took longer than that poll's window to actually start.
-        // Same "adopt any unclaimed orphan" ambiguity the original
-        // died-PID reassignment already accepted -- rare and last-resort
-        // now, not the primary mechanism.
-        if !orphans.is_empty() && (pid.is_none() || !running) {
+        // Adopt an unclaimed PID only for an account that has never had one
+        // attributed -- do_launch's own post-fallback poll
+        // (wait_for_new_roblox_pid) is the primary way a URI-handler-launched
+        // account gets a real PID, and this is the secondary net for the rare
+        // case where Roblox took longer to start than that poll's window.
+        //
+        // Deliberately NOT applied to an account whose tracked PID just died:
+        // handing it whichever stranger happens to be alive (a client the
+        // user opened outside MultiRoblox, or one left over from a previous
+        // session) is what used to pin a closed account on Running forever
+        // and stop the count from ever coming down.
+        if !orphans.is_empty() && pid.is_none() {
             let adopted = orphans.remove(0);
             state
                 .account_pids
@@ -1184,19 +1523,37 @@ async fn watch_tick(app: &AppHandle) {
         let username = acct.get("username").and_then(|v| v.as_str());
         let user_id = acct.get("userId").and_then(|v| v.as_str());
         let pid = state.account_pids.lock().unwrap().get(account_id).copied();
-        emit_log(
-            app,
-            "warn",
-            "crash",
-            &format!(
-                "Roblox closed unexpectedly for {} (missed {} consecutive checks)",
-                username.unwrap_or(account_id),
-                MISS_THRESHOLD
-            ),
-            Some(
-                serde_json::json!({ "accountId": account_id, "username": username, "userId": user_id, "pid": pid }),
-            ),
-        );
+        // Check the exit code to distinguish a user-initiated close (X button,
+        // exit code 0) from an actual crash (non-zero or unreadable).
+        let clean_exit = pid.map_or(false, |p| process_exit_code(p) == Some(0));
+        if clean_exit {
+            emit_log(
+                app,
+                "info",
+                "close",
+                &format!(
+                    "Roblox closed for {} (clean exit)",
+                    username.unwrap_or(account_id)
+                ),
+                Some(
+                    serde_json::json!({ "accountId": account_id, "username": username, "userId": user_id, "pid": pid }),
+                ),
+            );
+        } else {
+            emit_log(
+                app,
+                "warn",
+                "crash",
+                &format!(
+                    "Roblox closed unexpectedly for {} (missed {} consecutive checks)",
+                    username.unwrap_or(account_id),
+                    MISS_THRESHOLD
+                ),
+                Some(
+                    serde_json::json!({ "accountId": account_id, "username": username, "userId": user_id, "pid": pid }),
+                ),
+            );
+        }
         state.account_pids.lock().unwrap().remove(account_id);
         clear_manual_priority(&state, account_id);
         let _ = app.emit("roblox:closed", account_id);
@@ -1204,7 +1561,7 @@ async fn watch_tick(app: &AppHandle) {
         apply_priority_policy(&state, &close_settings).await;
 
         let auto_relaunch = close_settings.get("autoRelaunch").and_then(|v| v.as_bool()).unwrap_or(false);
-        if auto_relaunch {
+        if auto_relaunch && !clean_exit {
             let cookie = acct.get("cookie").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let target = acct.get("gameTarget").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if !cookie.is_empty() {
@@ -1237,6 +1594,10 @@ async fn watch_tick(app: &AppHandle) {
     // accounts above were dropped from account_pids, so the pushed count and
     // the polled one can't disagree.
     let _ = app.emit("roblox:count", owned_running_count(&state, &alive_pids));
+    // Keep the on-disk mirror in step with whatever this tick changed
+    // (adoptions, closures) so a restart from here recovers the right set.
+    // No-ops unless the map actually moved.
+    persist_instances(&state);
     stop_watch_poll_if_idle(&state);
 }
 
@@ -1541,6 +1902,10 @@ pub async fn do_launch(
                 .lock()
                 .unwrap()
                 .insert(account_id.to_string(), pid);
+            // Mirror it out straight away: the attribution is only useful for
+            // startup recovery if it survives the app being closed with this
+            // client still open.
+            persist_instances(state);
             // Fired the instant the process exists, not after the trailing
             // priority/bookkeeping work below or the JSON round-trip back to
             // the caller -- that gap (small on its own, but stacked behind
@@ -1568,6 +1933,7 @@ pub async fn do_launch(
                     .lock()
                     .unwrap()
                     .insert(account_id.to_string(), pid);
+                persist_instances(state);
                 let _ = app.emit("roblox:started", account_id);
             }
         }

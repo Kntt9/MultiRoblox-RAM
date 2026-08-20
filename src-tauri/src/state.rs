@@ -42,6 +42,15 @@ pub struct AppState {
     pub launch_cancel: Mutex<HashMap<String, Arc<AtomicBool>>>,
 
     pub login_cancel: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+
+    /// Serializes sync_running_instances. Concurrent callers (startup, the
+    /// Reload buttons, the kill paths) queue on this instead of racing each
+    /// other over account_pids/watched_accounts.
+    pub sync_lock: tokio::sync::Mutex<()>,
+    /// Last account -> PID map written to instances.json, so the mirror is
+    /// only rewritten when tracking actually changed (the watch loop calls
+    /// into it once a second).
+    pub persisted_instances: Mutex<Option<Vec<(String, u32)>>>,
 }
 
 impl AppState {
@@ -88,6 +97,8 @@ impl AppState {
             launch_lock: tokio::sync::Mutex::new(()),
             launch_cancel: Mutex::new(HashMap::new()),
             login_cancel: Mutex::new(None),
+            sync_lock: tokio::sync::Mutex::new(()),
+            persisted_instances: Mutex::new(None),
         }
     }
 }

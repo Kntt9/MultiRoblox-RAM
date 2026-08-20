@@ -47,6 +47,8 @@ window.I18N.pt = {
   'dash.createBackup': 'Criar backup',
   'dash.addAccount': 'Adicionar conta',
   'dash.newGroup': 'Novo grupo',
+  'dash.syncBtn': 'Sincronizar',
+  'dash.syncBtnTitle': 'Sincronizar instâncias em execução com a realidade',
 
   // ── ações comuns ──
   'common.cancel': 'Cancelar',
@@ -65,6 +67,8 @@ window.I18N.pt = {
   'common.loading': 'Carregando…',
   'common.saved': 'Salvo',
   'common.auto': 'Automático',
+  'common.sync': 'Sincronizar',
+  'common.syncing': 'Sincronizando…',
 
   // ── página de contas ──
   'accounts.title': 'Contas',

@@ -1,12 +1,82 @@
-// Reimplements the exact `window.api` surface the old Electron preload.js
-// exposed, on top of Tauri's invoke/listen, so renderer.js needed zero
-// call-site changes when the app moved off Electron.
+/**
+ * Reimplements the exact `window.api` surface the old Electron preload.js
+ * exposed, on top of Tauri's invoke/listen, so renderer.js needed zero
+ * call-site changes when the app moved off Electron.
+ * @typedef {Object} ApiSurface
+ * @property {() => Promise<void>} loadAccounts
+ * @property {(account: any) => Promise<any>} addAccount
+ * @property {(id: string) => Promise<any>} removeAccount
+ * @property {(id: string) => Promise<any>} restoreAccount
+ * @property {(id: string) => Promise<any>} purgeAccount
+ * @property {() => Promise<any>} emptyTrash
+ * @property {(id: string, data: any) => Promise<any>} updateAccount
+ * @property {(ids: string[]) => Promise<any>} reorderAccounts
+ * @property {() => Promise<any>} loadPackages
+ * @property {(packages: any[]) => Promise<any>} savePackages
+ * @property {() => Promise<any>} openLogin
+ * @property {(username: string, password: string) => Promise<any>} openSignup
+ * @property {(cookie: string) => Promise<any>} openAccountInBrowser
+ * @property {() => Promise<any>} cancelLogin
+ * @property {(cookie: string) => Promise<any>} validateCookie
+ * @property {(percent: number) => Promise<any>} setRobloxVolume
+ * @property {() => Promise<any>} killAllRoblox
+ * @property {(id: string) => Promise<any>} killOneRoblox
+ * @property {() => Promise<number>} getRunningCount
+ * @property {() => Promise<string[]>} getWatchedIds
+ * @property {() => Promise<any>} syncInstances
+ * @property {() => Promise<any>} trimRobloxMemory
+ * @property {(id: string) => Promise<any>} trimAccountMemory
+ * @property {(id: string, priority: string) => Promise<any>} setAccountPriority
+ * @property {(cb: Function) => void} onAllRobloxClosed
+ * @property {(id: string, cookie: string, target: string|null) => Promise<any>} launchRoblox
+ * @property {(id: string) => Promise<any>} cancelLaunch
+ * @property {(url: string) => Promise<any>} openExternal
+ * @property {() => Promise<string>} getAppVersion
+ * @property {(id: string) => Promise<any>} trackingCapturePreview
+ * @property {(id: string, username: string, webhookUrl: string, regions: string[]) => Promise<any>} trackingCaptureAndSend
+ * @property {(url: string) => Promise<any>} trackingValidateWebhook
+ * @property {() => Promise<any>} loadSettings
+ * @property {(data: any) => Promise<any>} saveSettings
+ * @property {() => Promise<any>} encStatus
+ * @property {(pass: string) => Promise<any>} encUnlock
+ * @property {(pass: string) => Promise<any>} encSetKey
+ * @property {() => Promise<any>} clearAppData
+ * @property {(password: string) => Promise<any>} backupCreate
+ * @property {(password: string) => Promise<any>} backupRestore
+ * @property {(password: string, keep: number) => Promise<any>} backupAutoCreate
+ * @property {() => Promise<any[]>} backupList
+ * @property {(name: string) => Promise<any>} backupDelete
+ * @property {(path: string, password: string) => Promise<any>} backupRestorePath
+ * @property {() => Promise<any>} backupAutoPassword
+ * @property {() => Promise<any>} multiInstanceStatus
+ * @property {() => Promise<any>} antiAfkStatus
+ * @property {() => Promise<any[]>} readGenHistory
+ * @property {(list: any[]) => Promise<any>} writeGenHistory
+ * @property {() => Promise<any>} clearGenHistory
+ * @property {() => Promise<any>} readFFlags
+ * @property {(flags: any) => Promise<any>} writeFFlags
+ * @property {() => Promise<any>} readFpsCap
+ * @property {(cap: any) => Promise<any>} writeFpsCap
+ * @property {(cb: Function) => void} onChromeProgress
+ * @property {(cb: Function) => void} onRobloxClosed
+ * @property {(cb: Function) => void} onRobloxStarted
+ * @property {(cb: Function) => void} onRobloxCount
+ * @property {(cb: Function) => void} onLogEntry
+ * @property {(channel: string|null) => Promise<string>} getRobloxVersion
+ * @property {(placeIdOrTarget: string, cookie: string) => Promise<any>} getGameName
+ * @property {(url: string) => Promise<any>} robloxGet
+ * @property {(cookie: string, username: string) => Promise<any>} followUser
+ * @property {(apiKey: string, quantity: number) => Promise<any>} altgenGenerate
+ * @property {() => Promise<any>} checkForUpdates
+ * @property {(update: any) => Promise<any>} installUpdate
+ */
 (() => {
   const T = window.__TAURI__;
   const invoke = T.core.invoke;
   const listen = T.event.listen;
   const win = T.window.getCurrentWindow();
 
+  /** @type {ApiSurface} */
   window.api = {
     minimize: () => win.minimize(),
     maximize: () => win.toggleMaximize(),
@@ -35,6 +105,7 @@
     killOneRoblox: (id) => invoke('roblox_kill_one', { id }),
     getRunningCount: () => invoke('roblox_running_count'),
     getWatchedIds: () => invoke('roblox_watched_ids'),
+    syncInstances: () => invoke('roblox_sync_instances'),
     trimRobloxMemory: () => invoke('roblox_trim_memory'),
     trimAccountMemory: (id) => invoke('roblox_trim_account_memory', { id }),
     setAccountPriority: (id, priority) => invoke('roblox_set_account_priority', { id, priority }),

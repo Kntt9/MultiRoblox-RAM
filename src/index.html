@@ -8,6 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
 <link rel="stylesheet" href="styles.css"/>
+<script type="module" src="js/utils.js"></script>
+<script src="renderer.js"></script>
 </head>
 <body>
 <div id="titlebar">
@@ -89,6 +91,11 @@
             <div class="ph-title"><span class="material-icons-round" style="font-size:19px;color:var(--ac)">dashboard</span><span data-i18n="dash.title">Dashboard</span></div>
             <div class="ph-sub" id="dash-sub">—</div>
           </div>
+          <div class="ph-actions">
+            <button class="btn-out" id="dash-sync-btn" onclick="syncInstances('dash')" data-i18n-title="dash.syncBtnTitle" title="Sync running instances with reality">
+              <span class="material-icons-round">sync</span><span data-i18n="dash.syncBtn">Sync</span>
+            </button>
+          </div>
         </div>
         <div class="sw">
           <div class="dash-grid" id="dash-stats"></div>
@@ -138,6 +145,9 @@
             <button class="btn-out" id="btn-trash" onclick="openTrash()" data-i18n-title="accounts.trashTitle" title="Trash — deleted accounts can be restored here">
               <span class="material-icons-round">delete</span><span data-i18n="accounts.trash">Trash</span>
               <span class="trash-count" id="trash-count" style="display:none">0</span>
+            </button>
+            <button class="btn-out" id="acct-sync-btn" onclick="syncInstances('accounts')" title="Sync running instances with reality">
+              <span class="material-icons-round">sync</span><span data-i18n="common.sync">Sync</span>
             </button>
             <div class="view-toggle">
               <button class="vt active" id="vt-grid" onclick="setAcctView('grid')"><span class="material-icons-round">grid_view</span></button>
